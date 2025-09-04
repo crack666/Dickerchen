@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dickerchen</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>💪 Dickerchen</h1>
+      <p id="motivation">Mach deine Dicken! 🏋️‍♂️</p>
+      <div id="tabs">
+        <button id="tab-today" class="tab-btn active">Heute</button>
+        <button id="tab-alltime" class="tab-btn">Ewige Statistik</button>
+      </div>
+    </header>
+    <main>
+      <div id="today-view" class="view active">
+        <div id="dashboard">
+          <div id="progress">
+            <h2>Dein Fortschritt heute</h2>
+            <div id="progress-bar">
+              <div id="progress-fill"></div>
+              <p id="progress-text">0 / 100</p>
+            </div>
+            <div class="progress-info">
+              <button id="share-progress" class="share-btn" style="display: none;">📤 Teilen</button>
+            </div>
+          </div>
+          <div id="add-pushups">
+            <div class="add-buttons-row">
+              <button class="add-btn" data-count="10">💪 +10</button>
+              <button class="add-btn" data-count="20">💪💪 +20</button>
+              <button class="add-btn" data-count="30">💪💪💪 +30</button>
+            </div>
+            <div id="custom-input">
+              <label for="custom-slider">Eigene Anzahl:</label>
+              <input type="range" id="custom-slider" min="1" max="100" value="10">
+              <span id="slider-value">10</span>
+              <button id="add-custom">Hinzufügen</button>
+            </div>
+          </div>
+          <div id="leaderboard">
+            <h2>🏆 Leaderboard heute</h2>
+            <ul id="leaderboard-list"></ul>
+          </div>
+        </div>
+      </div>
+      
+      <div id="alltime-view" class="view">
+        <div id="alltime-dashboard">
+          <div id="total-progress">
+            <h2>Dein Gesamtfortschritt</h2>
+            <p id="total-text">0 Dicken insgesamt</p>
+          </div>
+          <div id="alltime-leaderboard">
+            <h2>🏆 Ewige Bestenliste</h2>
+            <ul id="alltime-leaderboard-list"></ul>
+          </div>
+          <div id="calendar">
+            <h2>📅 Dein Kalender</h2>
+            <div id="calendar-controls">
+              <button id="prev-month">‹</button>
+              <span id="current-month">September 2025</span>
+              <button id="next-month">›</button>
+            </div>
+            <div id="calendar-grid"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Modal Overlay -->
+      <div id="user-modal" class="modal">
+        <div class="modal-content">
+          <span class="close">&times;</span>
+          <h2 id="modal-name"></h2>
+          <div id="modal-progress"></div>
+          <h3 id="modal-log-title">Protokoll heute:</h3>
+          <ul id="modal-log"></ul>
+          <button id="nudge-btn">👉 Anstupsen!</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
