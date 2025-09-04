@@ -367,6 +367,90 @@ button:active {
   margin-bottom: 20px;
 }
 
+#alltime-leaderboard-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#alltime-leaderboard-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  margin: 8px 0;
+  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  border-radius: 12px;
+  border-left: 4px solid #6c757d;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+#alltime-leaderboard-list li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, transparent 49%, rgba(255,255,255,0.1) 50%, transparent 51%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+#alltime-leaderboard-list li:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  border-left-color: #667eea;
+}
+
+#alltime-leaderboard-list li:hover::before {
+  opacity: 1;
+}
+
+#alltime-leaderboard-list li.you {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border-left-color: #ffc107;
+  animation: pulse 2s infinite;
+}
+
+#alltime-leaderboard-list li:nth-child(1) {
+  background: linear-gradient(135deg, #ffd700, #ffed4e);
+  color: #333;
+  border-left-color: #ffd700;
+  box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3);
+}
+
+#alltime-leaderboard-list li:nth-child(1) .rank::before {
+  content: "🥇 ";
+}
+
+#alltime-leaderboard-list li:nth-child(2) {
+  background: linear-gradient(135deg, #c0c0c0, #e8e8e8);
+  color: #333;
+  border-left-color: #c0c0c0;
+  box-shadow: 0 4px 20px rgba(192, 192, 192, 0.3);
+}
+
+#alltime-leaderboard-list li:nth-child(2) .rank::before {
+  content: "🥈 ";
+}
+
+#alltime-leaderboard-list li:nth-child(3) {
+  background: linear-gradient(135deg, #cd7f32, #d4953a);
+  color: white;
+  border-left-color: #cd7f32;
+  box-shadow: 0 4px 20px rgba(205, 127, 50, 0.3);
+}
+
+#alltime-leaderboard-list li:nth-child(3) .rank::before {
+  content: "🥉 ";
+}
+
 #calendar {
   margin-top: 20px;
 }
@@ -460,6 +544,16 @@ button:active {
 .calendar-day.complete {
   background: #4CAF50;
   color: white;
+}
+
+.calendar-day.future {
+  background: #e0e0e0;
+  color: #757575;
+  cursor: default;
+}
+
+.calendar-day.future:hover {
+  transform: none;
 }
 
 .calendar-day.today {

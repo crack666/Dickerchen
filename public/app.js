@@ -302,7 +302,7 @@ async function loadAlltimeStats() {
       <span class="rank">${index + 1}. ${user.name} ${userId && user.id == userId ? '(Du)' : ''}</span>
       <span class="score">${user.total} Dicke</span>
     `;
-    li.addEventListener('click', () => openCalendarModal(user));
+    li.addEventListener('click', () => openUserModal(user));
     alltimeList.appendChild(li);
   });
   
@@ -338,24 +338,72 @@ async function openUserModal(user) {
 }
 
 let currentCalendarDate = new Date();
+let currentCalendarUserId = null;
 
 async function loadCalendar(userId) {
   if (!userId) return;
   
+  currentCalendarUserId = userId;
   const year = currentCalendarDate.getFullYear();
   const month = currentCalendarDate.getMonth() + 1; // Convert to 1-based month
   
   const calendarResponse = await fetch(`${API_BASE}/calendar/${userId}/${year}/${month}`);
   const calendarData = await calendarResponse.json();
   
+  // Get user name for display
+  const userResponse = await fetch(`${API_BASE}/users`);
+  const users = await userResponse.json();
+  const currentUser = users.find(u => u.id == userId);
+  const userName = currentUser ? currentUser.name : 'Unbekannt';
+  
   const calendarGrid = document.getElementById('calendar-grid');
   calendarGrid.innerHTML = '';
   
-  // Update month display
+  // Update month display with user name
   const monthNames = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   document.getElementById('current-month').textContent = 
-    `${monthNames[currentCalendarDate.getMonth()]} ${currentCalendarDate.getFullYear()}`;
+    `${monthNames[currentCalendarDate.getMonth()]} ${currentCalendarDate.getFullYear()} - ${userName}`;
+  
+  // Add user selector if not already present
+  if (!document.getElementById('calendar-user-selector')) {
+    const selectorContainer = document.createElement('div');
+    selectorContainer.style.textAlign = 'center';
+    selectorContainer.style.margin = '10px 0';
+    
+    const label = document.createElement('label');
+    label.textContent = 'Kalender anzeigen für: ';
+    label.style.marginRight = '10px';
+    label.style.fontWeight = 'bold';
+    
+    const userSelector = document.createElement('select');
+    userSelector.id = 'calendar-user-selector';
+    userSelector.style.padding = '8px 12px';
+    userSelector.style.borderRadius = '8px';
+    userSelector.style.border = '2px solid #ddd';
+    userSelector.style.backgroundColor = 'white';
+    userSelector.style.fontSize = '14px';
+    userSelector.style.cursor = 'pointer';
+    
+    users.forEach(user => {
+      const option = document.createElement('option');
+      option.value = user.id;
+      option.textContent = user.name;
+      option.selected = user.id == userId;
+      userSelector.appendChild(option);
+    });
+    
+    userSelector.addEventListener('change', (e) => {
+      loadCalendar(e.target.value);
+    });
+    
+    selectorContainer.appendChild(label);
+    selectorContainer.appendChild(userSelector);
+    document.getElementById('current-month').parentNode.insertBefore(selectorContainer, document.getElementById('current-month'));
+  } else {
+    // Update existing selector
+    document.getElementById('calendar-user-selector').value = userId;
+  }
   
   // Add day headers
   const dayHeaders = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
@@ -396,77 +444,109 @@ async function loadCalendar(userId) {
     dayEl.className = 'calendar-day';
     dayEl.textContent = day;
     
+    // Check if the date is in the future
+    const isFutureDate = date > today;
+    
+    // Add click event for day details only for past/current days
+    if (!isFutureDate) {
+      dayEl.addEventListener('click', () => showDayDetails(dateStr, total, dayData));
+    }
+    
     if (date.toDateString() === today.toDateString()) {
       dayEl.classList.add('today');
     }
     
-    if (total === 0) {
-      dayEl.classList.add('missed');
-    } else if (total < dailyGoal) {
-      dayEl.classList.add('partial');
-    } else {
-      dayEl.classList.add('complete');
-    }
+    // Ensure dailyGoal is defined
+    const goalThreshold = dailyGoal || 50;
     
-    dayEl.title = `${date.toLocaleDateString()}: ${total} Dicke`;
+    if (isFutureDate) {
+      // Future dates: neutral styling
+      dayEl.classList.add('future');
+      dayEl.title = `${date.toLocaleDateString()}: Zukünftiger Tag`;
+    } else if (total === 0) {
+      // Past/today with no push-ups: missed
+      dayEl.classList.add('missed');
+      dayEl.title = `${date.toLocaleDateString()}: Keine Push-ups`;
+    } else if (total < goalThreshold) {
+      // Past/today with some push-ups: partial
+      dayEl.classList.add('partial');
+      dayEl.title = `${date.toLocaleDateString()}: ${total}/${goalThreshold} Push-ups (teilweise)`;
+    } else {
+      // Past/today with goal reached: complete
+      dayEl.classList.add('complete');
+      dayEl.title = `${date.toLocaleDateString()}: ${total}/${goalThreshold} Push-ups (erfüllt!)`;
+    }
     calendarGrid.appendChild(dayEl);
   }
+}
+
+// Show detailed information for a specific day
+async function showDayDetails(dateStr, total, dayData) {
+  if (!currentCalendarUserId) return;
+  
+  // Get detailed pushup data for this day
+  const detailResponse = await fetch(`${API_BASE}/pushups/${currentCalendarUserId}`);
+  const allPushups = await detailResponse.json();
+  
+  // Filter pushups for the specific date
+  const dayPushups = allPushups.pushups ? allPushups.pushups.filter(p => {
+    const pushupDate = new Date(p.timestamp).toISOString().split('T')[0];
+    return pushupDate === dateStr;
+  }) : [];
+  
+  // Get user name
+  const userResponse = await fetch(`${API_BASE}/users`);
+  const users = await userResponse.json();
+  const currentUser = users.find(u => u.id == currentCalendarUserId);
+  const userName = currentUser ? currentUser.name : 'Unbekannt';
+  
+  // Format date for display
+  const displayDate = new Date(dateStr + 'T00:00:00').toLocaleDateString('de-DE', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  
+  // Show in modal
+  document.getElementById('modal-name').textContent = `${userName} - ${displayDate}`;
+  document.getElementById('modal-progress').innerHTML = `
+    <div style="text-align: center; margin: 20px 0;">
+      <div style="font-size: 48px; font-weight: bold; color: ${total >= 50 ? '#4CAF50' : total > 0 ? '#FF9800' : '#FF5722'};">
+        ${total}
+      </div>
+      <div style="color: #666; margin-top: 10px;">
+        ${total >= 50 ? '🎉 Ziel erreicht!' : total > 0 ? '⚠️ Teilweise erfüllt' : '❌ Kein Training'}
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('modal-log-title').textContent = 'Einzelne Sets:';
+  
+  const logList = document.getElementById('modal-log');
+  if (dayPushups.length === 0) {
+    logList.innerHTML = '<p style="color: #666; font-style: italic;">Keine Push-ups an diesem Tag</p>';
+  } else {
+    logList.innerHTML = dayPushups.map(p => {
+      const time = new Date(p.timestamp).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+      return `<p><strong>${p.count}</strong> Push-ups um <strong>${time}</strong></p>`;
+    }).join('');
+  }
+  
+  document.getElementById('user-modal').style.display = 'block';
 }
 
 // Calendar navigation
 function initCalendarNavigation() {
   document.getElementById('prev-month').addEventListener('click', () => {
     currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
-    if (userId) loadCalendar(userId);
+    if (currentCalendarUserId) loadCalendar(currentCalendarUserId);
   });
   
   document.getElementById('next-month').addEventListener('click', () => {
     currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
-    if (userId) loadCalendar(userId);
+    if (currentCalendarUserId) loadCalendar(currentCalendarUserId);
   });
-}
-
-async function openCalendarModal(user) {
-  // Reuse the existing modal for calendar view
-  document.getElementById('modal-name').textContent = `${user.name} - Kalender`;
-  document.getElementById('modal-progress').innerHTML = '<div id="modal-calendar"></div>';
-  document.getElementById('modal-log-title').textContent = 'Letzte 30 Tage:';
-  
-  const logList = document.getElementById('modal-log');
-  logList.innerHTML = '<p>Klicke auf einen Tag für Details</p>';
-  
-  // Load calendar data for the current month
-  const currentDate = new Date();
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth() + 1; // Convert to 1-based month
-  const calendarResponse = await fetch(`${API_BASE}/calendar/${user.id}/${year}/${month}`);
-  const calendarData = await calendarResponse.json();
-  
-  const modalCalendar = document.getElementById('modal-calendar');
-  modalCalendar.innerHTML = '';
-  
-  calendarData.forEach(day => {
-    const dayEl = document.createElement('div');
-    dayEl.textContent = `${day.date}: ${day.total} Dicken`;
-    dayEl.style.margin = '5px 0';
-    dayEl.style.padding = '5px';
-    dayEl.style.borderRadius = '5px';
-    
-    if (day.total === 0) {
-      dayEl.style.background = '#FF5722';
-      dayEl.style.color = 'white';
-    } else if (day.total < dailyGoal) {
-      dayEl.style.background = '#FF9800';
-      dayEl.style.color = 'white';
-    } else {
-      dayEl.style.background = '#4CAF50';
-      dayEl.style.color = 'white';
-    }
-    
-    modalCalendar.appendChild(dayEl);
-  });
-  
-  document.getElementById('user-modal').style.display = 'block';
 }
 
 async function nudgeUser(user) {
