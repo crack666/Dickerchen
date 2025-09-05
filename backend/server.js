@@ -267,6 +267,42 @@ app.post('/api/pushups', async (req, res) => {
   }
 });
 
+// Delete a specific pushup entry (only owner can delete)
+app.delete('/api/pushups/:pushupId', async (req, res) => {
+  try {
+    const { pushupId } = req.params;
+    const { userId } = req.body; // User ID for ownership verification
+    
+    // First verify that the pushup belongs to the requesting user
+    const ownershipCheck = await pool.query(
+      'SELECT user_id FROM pushups WHERE id = $1',
+      [pushupId]
+    );
+    
+    if (ownershipCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Push-up entry not found' });
+    }
+    
+    if (ownershipCheck.rows[0].user_id != userId) {
+      return res.status(403).json({ error: 'You can only delete your own push-up entries' });
+    }
+    
+    // Delete the pushup entry
+    const result = await pool.query(
+      'DELETE FROM pushups WHERE id = $1 RETURNING *',
+      [pushupId]
+    );
+    
+    res.json({ 
+      success: true, 
+      deleted: result.rows[0],
+      message: 'Push-up entry deleted successfully' 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/pushups/:userId', async (req, res) => {
   try {
     // Get today's date in Berlin timezone to match calendar

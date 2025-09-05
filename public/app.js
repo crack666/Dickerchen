@@ -706,8 +706,63 @@ async function openUserModal(user) {
   data.pushups.forEach(pushup => {
     const li = document.createElement('li');
     const time = new Date(pushup.timestamp).toLocaleTimeString();
-    li.textContent = `${time}: ${pushup.count} Dicke`;
+    
+    // Check if this is the current user's own profile
+    const isOwnProfile = userId && user.id == userId;
+    
+    if (isOwnProfile) {
+      // User can delete their own entries
+      li.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0;">
+          <span>${time}: ${pushup.count} Dicke</span>
+          <button class="delete-pushup-btn" data-pushup-id="${pushup.id}" style="
+            background: #ff4444; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            padding: 4px 8px; 
+            cursor: pointer; 
+            font-size: 12px;
+            margin-left: 10px;
+          ">🗑️</button>
+        </div>
+      `;
+    } else {
+      // Other users' profiles - no delete button
+      li.innerHTML = `<span>${time}: ${pushup.count} Dicke</span>`;
+    }
+    
     logList.appendChild(li);
+  });
+  
+  // Add event listeners for delete buttons
+  document.querySelectorAll('.delete-pushup-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const pushupId = btn.dataset.pushupId;
+      
+      if (confirm('Möchtest du diesen Push-up-Satz wirklich löschen?')) {
+        try {
+          const deleteResponse = await fetch(`${API_BASE}/pushups/${pushupId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId })
+          });
+          
+          if (deleteResponse.ok) {
+            // Reload the modal data and refresh main view
+            await openUserModal(user);
+            loadProgress();
+            loadLeaderboard();
+          } else {
+            const error = await deleteResponse.json();
+            alert(`Fehler beim Löschen: ${error.error}`);
+          }
+        } catch (error) {
+          alert(`Fehler beim Löschen: ${error.message}`);
+        }
+      }
+    });
   });
   
   // Nudge button
