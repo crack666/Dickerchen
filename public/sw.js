@@ -1,86 +1,175 @@
-// Service Worker for Dickerchen PWA
-const CACHE_NAME = 'dickerchen-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/manifest.json',
-  '/icon-192.svg',
-  '/icon-512.svg'
+// Dickerchen Service Worker
+// Supports: offline core assets, push notifications, dev-friendly behaviour
+
+const VERSION = 'v4'; // bump to force update
+const DEV = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
+const CORE_CACHE = `dickerchen-core-${VERSION}`;
+const RUNTIME_CACHE = `dickerchen-runtime-${VERSION}`;
+
+// Core assets (small & critical). Index last so we always re-fetch if changed.
+const CORE_ASSETS = [
+	'/',
+	'/index.html',
+	'/styles.css',
+	'/app.js',
+	'/manifest.json',
+	'/icon-192.svg',
+	'/icon-512.svg',
+	'/favicon.ico'
 ];
 
-// Install event - cache resources
+// Utility: log only in dev
+function log(...args) {
+	if (DEV) console.log('[SW]', ...args);
+}
+
+// Install: pre-cache core assets (skip if dev & user refreshing often; still cache minimal)
 self.addEventListener('install', event => {
-  console.log('Service Worker installing.');
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-  );
+	log('install', VERSION, 'DEV=', DEV);
+	self.skipWaiting();
+	event.waitUntil(
+		caches.open(CORE_CACHE).then(async cache => {
+			try {
+				await cache.addAll(CORE_ASSETS);
+				log('core cached');
+			} catch (e) {
+				log('core cache error', e);
+			}
+		})
+	);
 });
 
-// Activate event
+// Activate: clean old caches
 self.addEventListener('activate', event => {
-  console.log('Service Worker activating.');
+	log('activate');
+	event.waitUntil(
+		(async () => {
+			const names = await caches.keys();
+			await Promise.all(
+				names.filter(n => ![CORE_CACHE, RUNTIME_CACHE].includes(n))
+					.map(n => caches.delete(n))
+			);
+			await self.clients.claim();
+			log('old caches cleared');
+		})()
+	);
 });
 
-// Fetch event - serve from cache
+// Fetch strategy:
+//  - API requests: network-first with fallback to cache (prod), network only (dev)
+//  - HTML navigation: network-first, fallback to cached index
+//  - Static assets (css/js/svg/png): cache-first, update in background
+//  - Everything else: pass through
 self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Return cached version or fetch from network
-        return response || fetch(event.request);
-      })
-  );
+	const req = event.request;
+	const url = new URL(req.url);
+
+	// Ignore non-GET
+	if (req.method !== 'GET') return;
+
+	// Bypass chrome-extension and similar
+	if (url.protocol.startsWith('chrome')) return;
+
+	// API calls
+	if (url.pathname.startsWith('/api/')) {
+		if (DEV) return; // dev: do not interfere
+		event.respondWith(networkFirst(req));
+		return;
+	}
+
+	// Navigations / HTML
+	if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
+		event.respondWith(
+			fetch(req)
+				.then(r => {
+					cachePut(CORE_CACHE, '/', r.clone());
+					return r;
+				})
+				.catch(() => caches.match('/index.html'))
+		);
+		return;
+	}
+
+	// Static assets
+	if (/(\.js$|\.css$|\.svg$|\.png$|\.ico$)/.test(url.pathname)) {
+		event.respondWith(cacheFirst(req));
+		return;
+	}
 });
 
-// Push event - handle notifications
+async function networkFirst(request) {
+	try {
+		const fresh = await fetch(request);
+		cachePut(RUNTIME_CACHE, request, fresh.clone());
+		return fresh;
+	} catch (e) {
+		const cached = await caches.match(request);
+		if (cached) return cached;
+		return new Response('Offline', { status: 503, statusText: 'Offline' });
+	}
+}
+
+async function cacheFirst(request) {
+	const cached = await caches.match(request);
+	if (cached) {
+		// Update in background (stale-while-revalidate)
+		fetch(request).then(r => cachePut(RUNTIME_CACHE, request, r)).catch(()=>{});
+		return cached;
+	}
+	try {
+		const fresh = await fetch(request);
+		cachePut(RUNTIME_CACHE, request, fresh.clone());
+		return fresh;
+	} catch (e) {
+		return new Response('Not available', { status: 404 });
+	}
+}
+
+async function cachePut(cacheName, request, response) {
+	try {
+		const cache = await caches.open(cacheName);
+		await cache.put(request, response);
+	} catch (e) {
+		log('cache put failed', e);
+	}
+}
+
+// Push notifications
 self.addEventListener('push', event => {
-  const data = event.data ? event.data.json() : {};
-  const options = {
-    body: data.body || 'Zeit für deine Dicke! 💪',
-    icon: '/icon-192.svg',
-    badge: '/icon-192.svg',
-    vibrate: [200, 100, 200],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: '2'
-    },
-    actions: [
-      {
-        action: 'explore',
-        title: 'App öffnen',
-        icon: '/icon-192.svg'
-      },
-      {
-        action: 'close',
-        title: 'Schließen'
-      }
-    ]
-  };
-  
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Dickerchen', options)
-  );
+	let data = {};
+	try { data = event.data ? event.data.json() : {}; } catch (e) {}
+	const title = data.title || 'Dickerchen';
+	const body = data.body || 'Zeit für ein paar Dicke!';
+	const options = {
+		body,
+		icon: '/icon-192.svg',
+		badge: '/icon-192.svg',
+		data: data.url || '/',
+	};
+	event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Notification click event
 self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  
-  if (event.action === 'explore') {
-    // Open app
-    event.waitUntil(
-      clients.openWindow('/')
-    );
-  } else if (event.action === 'close') {
-    // Just close
-    return;
-  } else {
-    // Default action - open app
-    event.waitUntil(
-      clients.openWindow('/')
-    );
-  }
+	event.notification.close();
+	const target = event.notification.data || '/';
+	event.waitUntil(
+		(async () => {
+			const allClients = await self.clients.matchAll({ type: 'window' });
+			for (const client of allClients) {
+				if (client.url.includes(self.location.origin)) {
+					client.focus();
+					return;
+				}
+			}
+			self.clients.openWindow(target);
+		})()
+	);
 });
+
+// Message handler (optional future use)
+self.addEventListener('message', event => {
+	if (event.data === 'skipWaiting') {
+		self.skipWaiting();
+	}
+});
+

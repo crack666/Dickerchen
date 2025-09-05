@@ -1,5 +1,17 @@
 // app.js
-const API_BASE = 'http://localhost:3001/api';
+// API Base URL - simplified for local development
+const API_BASE = window.location.hostname === 'dickerchen.fly.dev'
+  ? `${window.location.protocol}//${window.location.host}/api`
+  : '/api';  // Use relative URLs for local development
+
+console.log('🔗 API_BASE URL:', API_BASE);
+console.log('🌐 Window location:', window.location.href);
+
+// Test API connection immediately
+fetch(API_BASE + '/test')
+  .then(response => response.json())
+  .then(data => console.log('✅ API Test successful:', data))
+  .catch(error => console.error('❌ API Test failed:', error));
 
 let userId = localStorage.getItem('userId') || null;
 let userName = localStorage.getItem('userName') || null;
@@ -56,11 +68,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (event.target === modal) modal.style.display = 'none';
   };
 
-  // Register Service Worker
+  // Register Service Worker for all environments (needed for push notifications)
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('SW registered'))
-      .catch(err => console.log('SW registration failed'));
+      .then(reg => {
+        console.log('✅ Service Worker registered successfully');
+        console.log('� PWA features and push notifications are now available');
+      })
+      .catch(err => {
+        console.error('❌ Service Worker registration failed:', err);
+      });
+  } else {
+    console.warn('⚠️ Service Worker not supported - PWA features unavailable');
   }
 
   // Initialize calendar navigation
@@ -84,8 +103,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function initializeUser() {
-  // Initialize UI even without user login
-  // No automatic prompting, user must click login button
+  // If user is already logged in and has notification permission, try to subscribe
+  if (userId && 'Notification' in window && Notification.permission === 'granted') {
+    console.log('🔄 User already logged in with notification permission, subscribing...');
+    try {
+      await subscribeUser();
+    } catch (error) {
+      console.log('⚠️ Auto-subscription failed (probably already subscribed):', error.message);
+    }
+  }
 }
 
 async function createOrLoginUser(name) {
@@ -139,13 +165,28 @@ async function createOrLoginUser(name) {
   // Update login button
   document.getElementById('login-btn').textContent = `Angemeldet als: ${userName}`;
   
-  // Request notification permission after login
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission().then(permission => {
-      if (permission === 'granted') {
-        subscribeUser();
-      }
-    });
+  // Request notification permission and subscribe after login
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      // Permission already granted, subscribe immediately
+      console.log('📢 Notification permission already granted, subscribing...');
+      subscribeUser();
+    } else if (Notification.permission === 'default') {
+      // Ask for permission first
+      console.log('📢 Requesting notification permission...');
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          console.log('📢 Notification permission granted, subscribing...');
+          subscribeUser();
+        } else {
+          console.log('❌ Notification permission denied');
+        }
+      });
+    } else {
+      console.log('❌ Notification permission previously denied');
+    }
+  } else {
+    console.log('❌ Notifications not supported in this browser');
   }
   
   // Reload progress and leaderboard
@@ -550,49 +591,116 @@ function initCalendarNavigation() {
 }
 
 async function nudgeUser(user) {
-  const nudgeMessages = [
-    `Ey ${user.name}, mach deine Dicken! Ich habe schon ${user.total} gemacht! 💪`,
-    `Hey ${user.name}, Zeit für Push-ups! Du bist bei ${user.total}, ich bei [mein total]! 🏋️‍♂️`,
-    `Anstupsen! ${user.name}, nur noch [ziel - dein total] bis zum Ziel! 🔥`,
-    `Yo ${user.name}, Dicken-Time! Ich bin voraus mit [mein total]! 🚀`,
-    `Motivation! ${user.name}, du hast ${user.total} – lass uns pushen! 💥`
-  ];
-  
-  // Get my progress
-  const myResponse = await fetch(`${API_BASE}/pushups/${userId}`);
-  const myData = await myResponse.json();
-  
-  let message = nudgeMessages[Math.floor(Math.random() * nudgeMessages.length)];
-  message = message.replace('[mein total]', myData.total);
-  message = message.replace('[ziel - dein total]', (dailyGoal - user.total));
-  
-  // Send notification
-  await fetch(`${API_BASE}/send-notification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: user.id, message })
-  });
-  
-  alert(`Notification gesendet: ${message}`);
+  try {
+    const nudgeMessages = [
+      `Ey ${user.name}, mach deine Dicken! Ich habe schon [mein total] gemacht! 💪`,
+      `Hey ${user.name}, Zeit für Push-ups! Du bist bei ${user.total}, ich bei [mein total]! 🏋️‍♂️`,
+      `Anstupsen! ${user.name}, nur noch [ziel - dein total] bis zum Ziel! 🔥`,
+      `Yo ${user.name}, Dicken-Time! Ich bin voraus mit [mein total]! 🚀`,
+      `Motivation! ${user.name}, du hast ${user.total} – lass uns pushen! 💥`
+    ];
+    
+    // Get my progress
+    const myResponse = await fetch(`${API_BASE}/pushups/${userId}`);
+    const myData = await myResponse.json();
+    
+    let message = nudgeMessages[Math.floor(Math.random() * nudgeMessages.length)];
+    message = message.replace('[mein total]', myData.total);
+    message = message.replace('[ziel - dein total]', Math.max(0, dailyGoal - user.total));
+    
+    console.log('Sending notification to user:', user.id, 'Message:', message);
+    
+    // Send notification - fix parameter names
+    const response = await fetch(`${API_BASE}/send-notification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        userId: user.id, 
+        title: 'Dickerchen Anstupser! 💪', 
+        body: message 
+      })
+    });
+    
+    const result = await response.json();
+    console.log('Notification response:', result);
+    
+    if (response.ok) {
+      alert(`Notification erfolgreich gesendet an ${user.name}! 📱`);
+    } else {
+      alert(`Fehler beim Senden: ${result.error || 'Unbekannter Fehler'}`);
+    }
+  } catch (error) {
+    console.error('Error in nudgeUser:', error);
+    alert(`Fehler beim Senden der Notification: ${error.message}`);
+  }
 }
 
 // Push Notification functions
-function subscribeUser() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready.then(reg => {
-      reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array('BKgHClYOTs_CiYQUS-L2yTNc3CBQOMLL0bd22oOz5oJ1J0kXZ0UPD5qkSH0IvBk4-BY6cAXAp2kA5bXz6yTP15w')
-      }).then(subscription => {
-        fetch(`${API_BASE}/subscribe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, subscription })
-        });
-      }).catch(err => {
-        console.error('Failed to subscribe user:', err);
-      });
+async function subscribeUser() {
+  try {
+    console.log('Starting push notification subscription...');
+    
+    if (!('serviceWorker' in navigator)) {
+      throw new Error('Service Worker not supported');
+    }
+    
+    if (!('PushManager' in window)) {
+      throw new Error('Push notifications not supported');
+    }
+    
+    // Request notification permission
+    const permission = await Notification.requestPermission();
+    console.log('Notification permission:', permission);
+    
+    if (permission !== 'granted') {
+      throw new Error('Notification permission denied');
+    }
+    
+    // Get VAPID public key from server
+    const vapidResponse = await fetch(`${API_BASE}/vapid-public-key`);
+    const vapidData = await vapidResponse.json();
+    console.log('VAPID key received:', vapidData.publicKey);
+    
+    // Wait for service worker to be ready
+    const registration = await navigator.serviceWorker.ready;
+    console.log('Service worker ready');
+    
+    // Subscribe to push notifications
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidData.publicKey)
     });
+    
+    console.log('Push subscription created:', subscription);
+    
+    // Check if userId is valid
+    if (!userId) {
+      console.error('❌ No userId available for push subscription');
+      alert('Fehler: Kein Benutzer ausgewählt. Bitte erst einen Benutzer auswählen.');
+      return;
+    }
+    
+    console.log('📝 Sending subscription for userId:', userId);
+    
+    // Send subscription to server
+    const subscribeResponse = await fetch(`${API_BASE}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, subscription })
+    });
+    
+    const subscribeResult = await subscribeResponse.json();
+    console.log('Subscription sent to server:', subscribeResult);
+    
+    if (subscribeResponse.ok) {
+      console.log('✅ Push notifications successfully enabled!');
+    } else {
+      throw new Error('Failed to register subscription on server');
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to subscribe to push notifications:', error);
+    // Don't show alert to user unless it's critical, as this runs automatically
   }
 }
 
@@ -606,3 +714,57 @@ function urlBase64ToUint8Array(base64String) {
   }
   return outputArray;
 }
+
+// Debug functions
+async function showDebugInfo() {
+  try {
+    const response = await fetch(`${API_BASE}/debug/subscriptions`);
+    const data = await response.json();
+    
+    document.getElementById('debug-subscriptions').textContent = JSON.stringify(data.subscriptions, null, 2);
+    document.getElementById('debug-logs').textContent = JSON.stringify(data.lastLogs, null, 2);
+    
+    document.getElementById('debug-modal').style.display = 'block';
+  } catch (error) {
+    alert('Debug-Info konnte nicht geladen werden: ' + error.message);
+  }
+}
+
+// Debug modal setup
+document.getElementById('debug-btn').onclick = showDebugInfo;
+document.querySelector('.debug-close').onclick = () => {
+  document.getElementById('debug-modal').style.display = 'none';
+};
+
+// Test notifications button
+document.getElementById('test-notifications-btn').onclick = async () => {
+  if (!userId) {
+    alert('Bitte erst einloggen!');
+    return;
+  }
+  
+  console.log('🔔 Testing notifications manually...');
+  
+  try {
+    // Request permission if needed
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      console.log('📢 Notification permission:', permission);
+      
+      if (permission === 'granted') {
+        // Try to subscribe
+        await subscribeUser();
+        
+        // Show updated debug info
+        setTimeout(showDebugInfo, 1000);
+      } else {
+        alert('❌ Notification permission denied');
+      }
+    } else {
+      alert('❌ Notifications not supported in this browser');
+    }
+  } catch (error) {
+    console.error('❌ Test notification error:', error);
+    alert('Fehler: ' + error.message);
+  }
+};

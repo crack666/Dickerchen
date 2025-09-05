@@ -1,0 +1,9 @@
+<!-- Alternative: Einfaches großes Icon ohne Schatten für bessere Kompatibilität -->
+<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Minimaler Hintergrund für bessere Erkennbarkeit -->
+  <circle cx="256" cy="256" r="240" fill="#FF6B35" opacity="0.1"/>
+  
+  <!-- Sehr großes Bizeps-Emoji -->
+  <text x="256" y="256" font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif" 
+        font-size="320" text-anchor="middle" dominant-baseline="central">💪</text>
+</svg>

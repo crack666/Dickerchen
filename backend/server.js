@@ -4,27 +4,123 @@ const bodyParser = require('body-parser');
 const webPush = require('web-push');
 const { Pool } = require('pg');
 const path = require('path');
+const https = require('https');
+const fs = require('fs');
 
 const app = express();
+const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
 const PORT = process.env.PORT || 3001;
+const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// PostgreSQL connection
-const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'dickerchen',
-  password: 'password',
-  port: 5432,
-});
+// PostgreSQL connection - Environment-based
+const pool = new Pool(
+  process.env.DATABASE_URL ? {
+    connectionString: process.env.DATABASE_URL,
+    ssl: false // Disable SSL for fly.io internal connections
+  } : {
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_NAME || 'dickerchen',
+    password: process.env.DB_PASSWORD || 'password',
+    port: process.env.DB_PORT || 5432,
+  }
+);
+
+// Initialize database tables
+async function initializeDatabase() {
+  try {
+    console.log('🔧 Initializing database tables...');
+    
+    // Create users table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        total INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Users table ready');
+    
+    // Create pushups table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pushups (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        count INTEGER NOT NULL,
+        date DATE DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Pushups table ready');
+    
+    // Check if push_subscriptions table exists first
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'push_subscriptions'
+      )
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Create push_subscriptions table only if it doesn't exist
+      await pool.query(`
+        CREATE TABLE push_subscriptions (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER REFERENCES users(id),
+          endpoint TEXT NOT NULL,
+          p256dh TEXT NOT NULL,
+          auth TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id)
+        )
+      `);
+      console.log('✅ Push subscriptions table created');
+    } else {
+      console.log('✅ Push subscriptions table already exists');
+    }
+    
+    console.log('✅ Database tables initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing database:', error.message);
+    // Don't fail the server startup, just log the error
+  }
+}
+
+// Initialize database on startup
+initializeDatabase();
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+  origin: NODE_ENV === 'production' 
+    ? [process.env.FRONTEND_URL || 'https://dickerchen.fly.dev'] 
+    : [
+        'http://localhost:3001',
+        'http://127.0.0.1:3001',
+        'http://192.168.178.196:3001',
+        'https://localhost:3443',
+        'https://127.0.0.1:3443',
+        'https://192.168.178.196:3443'
+      ],
+  credentials: true
+};
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, '../public')));
+// Adjust path for Docker deployment vs local development
+const publicPath = process.env.NODE_ENV === 'production' 
+  ? path.join(__dirname, 'public') 
+  : path.join(__dirname, '../public');
+app.use(express.static(publicPath));
 
 // Specific favicon route
 app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/favicon.ico'));
+  const faviconPath = process.env.NODE_ENV === 'production' 
+    ? path.join(__dirname, 'public/favicon.ico') 
+    : path.join(__dirname, '../public/favicon.ico');
+  res.sendFile(faviconPath);
 });
 
 // Create tables
@@ -41,14 +137,26 @@ pool.query(`
     count INTEGER NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER UNIQUE REFERENCES users(id),
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
 `).catch(err => console.error('Error creating tables:', err));
 
-// Web Push setup with persistent VAPID keys
-const publicVapidKey = 'BKgHClYOTs_CiYQUS-L2yTNc3CBQOMLL0bd22oOz5oJ1J0kXZ0UPD5qkSH0IvBk4-BY6cAXAp2kA5bXz6yTP15w';
-const privateVapidKey = 'IjBhG8cPneQUcUxr1yAM283gDsUxQwgaCNtnUwKXGyY';
+// Web Push setup with environment-based VAPID keys
+const publicVapidKey = process.env.VAPID_PUBLIC_KEY || 'BKgHClYOTs_CiYQUS-L2yTNc3CBQOMLL0bd22oOz5oJ1J0kXZ0UPD5qkSH0IvBk4-BY6cAXAp2kA5bXz6yTP15w';
+const privateVapidKey = process.env.VAPID_PRIVATE_KEY || 'IjBhG8cPneQUcUxr1yAM283gDsUxQwgaCNtnUwKXGyY';
+const vapidEmail = process.env.VAPID_EMAIL || 'mailto:behr.lennart@gmail.com';
+
+console.log('🔑 VAPID Public Key:', publicVapidKey.substring(0, 20) + '...');
 
 webPush.setVapidDetails(
-  'mailto:your-email@example.com',
+  vapidEmail,
   publicVapidKey,
   privateVapidKey
 );
@@ -175,39 +283,118 @@ app.get('/api/calendar/:userId/:year/:month', async (req, res) => {
   }
 });
 
-// Store subscriptions in memory (in production, use database)
-const subscriptions = new Map();
-
+// VAPID public key endpoint
 app.get('/api/vapid-public-key', (req, res) => {
   res.json({ publicKey: publicVapidKey });
 });
 
+// Subscribe endpoint - save to database
 app.post('/api/subscribe', async (req, res) => {
-  const { userId, subscription } = req.body;
-  subscriptions.set(userId, subscription);
-  console.log('Subscription saved for user', userId);
-  res.status(201).json({ success: true });
+  try {
+    const { userId, subscription } = req.body;
+    
+    // Add to debug logs
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      userId: userId,
+      userIdType: typeof userId,
+      hasSubscription: !!subscription,
+      hasEndpoint: !!subscription?.endpoint,
+      hasKeys: !!subscription?.keys,
+      endpoint: subscription?.endpoint?.substring(0, 50) + '...'
+    };
+    
+    global.debugLogs = global.debugLogs || [];
+    global.debugLogs.push(logEntry);
+    // Keep only last 10 entries
+    if (global.debugLogs.length > 10) {
+      global.debugLogs = global.debugLogs.slice(-10);
+    }
+    
+    console.log('📥 Subscription request received:');
+    console.log('   User ID:', userId, '(type:', typeof userId, ')');
+    console.log('   Subscription endpoint:', subscription?.endpoint?.substring(0, 50) + '...');
+    console.log('   Subscription keys:', subscription?.keys ? 'present' : 'missing');
+    
+    // Validate input
+    if (!userId || !subscription) {
+      console.error('❌ Missing userId or subscription in request');
+      logEntry.error = 'Missing userId or subscription';
+      return res.status(400).json({ error: 'Missing userId or subscription' });
+    }
+    
+    if (!subscription.endpoint || !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) {
+      console.error('❌ Invalid subscription format');
+      logEntry.error = 'Invalid subscription format';
+      return res.status(400).json({ error: 'Invalid subscription format' });
+    }
+    
+    // Store subscription in database with UPSERT
+    await pool.query(`
+      INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, updated_at) 
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      ON CONFLICT (user_id) 
+      DO UPDATE SET 
+        endpoint = EXCLUDED.endpoint,
+        p256dh = EXCLUDED.p256dh,
+        auth = EXCLUDED.auth,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
+      parseInt(userId), 
+      subscription.endpoint, 
+      subscription.keys.p256dh, 
+      subscription.keys.auth
+    ]);
+    
+    console.log('✅ Subscription saved to database for user', userId);
+    res.status(201).json({ success: true, message: 'Subscription saved successfully' });
+  } catch (error) {
+    console.error('❌ Error saving subscription:', error);
+    res.status(500).json({ error: 'Failed to save subscription: ' + error.message });
+  }
 });
 
+// Send notification endpoint - load from database
 app.post('/api/send-notification', async (req, res) => {
-  const { userId, title, body } = req.body;
-  const subscription = subscriptions.get(userId);
-  
-  if (!subscription) {
-    return res.status(404).json({ error: 'Subscription not found' });
-  }
-
-  const payload = JSON.stringify({
-    title: title || 'Dickerchen',
-    body: body || 'Zeit für deine Dicke! 💪'
-  });
-
   try {
+    const { userId, title, body } = req.body;
+    console.log('Sending notification to user:', userId, 'Title:', title, 'Body:', body);
+    
+    // Get subscription from database
+    const result = await pool.query(
+      'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1', 
+      [parseInt(userId)]
+    );
+    
+    if (result.rows.length === 0) {
+      console.log('No subscription found for user:', userId);
+      return res.status(404).json({ error: 'Subscription not found. User needs to enable notifications first.' });
+    }
+    
+    const { endpoint, p256dh, auth } = result.rows[0];
+    const subscription = {
+      endpoint,
+      keys: { p256dh, auth }
+    };
+    
+    console.log('✅ Subscription loaded from database for user:', userId);
+
+    const payload = JSON.stringify({
+      title: title || 'Dickerchen',
+      body: body || 'Zeit für deine Dicke! 💪',
+      icon: '/icon-192.svg',
+      badge: '/icon-192.svg',
+      data: { userId }
+    });
+
+    console.log('Sending push notification with payload:', payload);
     await webPush.sendNotification(subscription, payload);
-    res.status(200).json({ success: true });
+    console.log('✅ Push notification sent successfully');
+    
+    res.status(200).json({ success: true, message: 'Notification sent successfully' });
   } catch (error) {
-    console.error('Error sending notification:', error);
-    res.status(500).json({ error: 'Failed to send notification' });
+    console.error('❌ Error sending notification:', error);
+    res.status(500).json({ error: 'Failed to send notification: ' + error.message });
   }
 });
 
@@ -232,6 +419,63 @@ app.post('/api/motivate-all', async (req, res) => {
   res.json({ success: true, sent: sentCount, total: subscriptions.size });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Debug endpoint - list all subscriptions
+app.get('/api/debug/subscriptions', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT user_id, endpoint, created_at FROM push_subscriptions ORDER BY user_id'
+    );
+    
+    const subscriptions = result.rows.map(row => ({
+      userId: row.user_id,
+      endpoint: row.endpoint?.substring(0, 50) + '...',
+      createdAt: row.created_at
+    }));
+    
+    res.json({ 
+      total: result.rows.length,
+      subscriptions: subscriptions,
+      lastLogs: global.debugLogs || []
+    });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    res.status(500).json({ error: 'Failed to fetch subscriptions' });
+  }
 });
+
+// Initialize debug logs array
+global.debugLogs = [];
+
+// Simple test endpoint
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'API is working!', 
+    timestamp: new Date().toISOString(),
+    publicPath: publicPath 
+  });
+});
+
+// HTTP Server
+app.listen(PORT, HOST, () => {
+  console.log(`HTTP Server running on http://${HOST}:${PORT}`);
+  console.log(`Local access: http://localhost:${PORT}`);
+  console.log(`LAN access: http://192.168.178.196:${PORT}`);
+});
+
+// HTTPS Server (für PWA)
+try {
+  const httpsOptions = {
+    key: fs.readFileSync(path.join(__dirname, 'key.pem')),
+    cert: fs.readFileSync(path.join(__dirname, 'cert.pem'))
+  };
+
+  https.createServer(httpsOptions, app).listen(HTTPS_PORT, HOST, () => {
+    console.log(`🔒 HTTPS Server running on https://${HOST}:${HTTPS_PORT}`);
+    console.log(`🔒 Local HTTPS access: https://localhost:${HTTPS_PORT}`);
+    console.log(`🔒 LAN HTTPS access: https://192.168.178.196:${HTTPS_PORT}`);
+    console.log(`📱 For PWA: Use HTTPS URL on mobile device`);
+  });
+} catch (error) {
+  console.log('⚠️  HTTPS not available (certificates missing)');
+  console.log('   PWA installation may not work over HTTP');
+}

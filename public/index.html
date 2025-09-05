@@ -54,7 +54,7 @@
         <div id="alltime-dashboard">
           <div id="total-progress">
             <h2>Dein Gesamtfortschritt</h2>
-            <p id="total-text">0 Dicken insgesamt</p>
+            <p id="total-text">Erst 0 Dicke insgesamt 😱</p>
           </div>
           <div id="alltime-leaderboard">
             <h2>🏆 Ewige Bestenliste</h2>
@@ -81,6 +81,20 @@
           <h3 id="modal-log-title">Protokoll heute:</h3>
           <ul id="modal-log"></ul>
           <button id="nudge-btn">👉 Anstupsen!</button>
+          <button id="debug-btn" style="background: #666; margin-top: 10px;">🔍 Debug Info</button>
+          <button id="test-notifications-btn" style="background: #ff9800; margin-top: 10px;">🔔 Test Notifications</button>
+        </div>
+      </div>
+      
+      <!-- Debug Modal -->
+      <div id="debug-modal" class="modal">
+        <div class="modal-content">
+          <span class="close debug-close">&times;</span>
+          <h2>🔍 Debug Information</h2>
+          <h3>Push Subscriptions:</h3>
+          <pre id="debug-subscriptions"></pre>
+          <h3>Recent Logs:</h3>
+          <pre id="debug-logs"></pre>
         </div>
       </div>
     </main>

@@ -1,5 +1,9 @@
-<!-- Einfaches SVG Icon -->
+<!-- Optimiertes PWA Icon für bessere Erkennbarkeit - EXTRA GROß -->
 <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#4CAF50"/>
-  <text x="256" y="280" font-family="Arial" font-size="64" fill="white" text-anchor="middle">💪</text>
+  <!-- Transparenter Hintergrund -->
+  <rect width="512" height="512" fill="transparent"/>
+  
+  <!-- SEHR großes Bizeps-Emoji - fast die gesamte Icon-Fläche -->
+  <text x="256" y="256" font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif" 
+        font-size="450" text-anchor="middle" dominant-baseline="central">💪</text>
 </svg>
