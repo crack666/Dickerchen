@@ -179,7 +179,12 @@ app.get('/api/users', async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const dailyGoal = 100;
-    const today = new Date().toISOString().split('T')[0];
+    // Use Berlin timezone to match other APIs
+    const today = new Date();
+    const berlinToday = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
+    const todayStr = berlinToday.getFullYear() + '-' + 
+                    String(berlinToday.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(berlinToday.getDate()).padStart(2, '0');
     
     // Get all users
     const usersResult = await pool.query('SELECT * FROM users');
@@ -187,10 +192,10 @@ app.get('/api/leaderboard', async (req, res) => {
     
     // Calculate leaderboard data for each user
     const leaderboardData = await Promise.all(users.map(async (user) => {
-      // Get today's pushups for this user, ordered by timestamp
+      // Get today's pushups for this user, ordered by timestamp (Berlin timezone)
       const pushupsResult = await pool.query(
-        'SELECT count, timestamp FROM pushups WHERE user_id = $1 AND DATE(timestamp) = $2 ORDER BY timestamp ASC',
-        [user.id, today]
+        'SELECT count, timestamp FROM pushups WHERE user_id = $1 AND to_char((timestamp AT TIME ZONE \'Europe/Berlin\'), \'YYYY-MM-DD\') = $2 ORDER BY timestamp ASC',
+        [user.id, todayStr]
       );
       
       const pushups = pushupsResult.rows;
