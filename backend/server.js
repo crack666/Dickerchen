@@ -175,6 +175,66 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+// Leaderboard endpoint with goal achievement logic
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const dailyGoal = 100;
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Get all users
+    const usersResult = await pool.query('SELECT * FROM users');
+    const users = usersResult.rows;
+    
+    // Calculate leaderboard data for each user
+    const leaderboardData = await Promise.all(users.map(async (user) => {
+      // Get today's pushups for this user, ordered by timestamp
+      const pushupsResult = await pool.query(
+        'SELECT count, timestamp FROM pushups WHERE user_id = $1 AND DATE(timestamp) = $2 ORDER BY timestamp ASC',
+        [user.id, today]
+      );
+      
+      const pushups = pushupsResult.rows;
+      let total = 0;
+      let goalReachedAt = null;
+      
+      // Calculate running total and find when goal was reached
+      for (const pushup of pushups) {
+        total += pushup.count;
+        if (total >= dailyGoal && goalReachedAt === null) {
+          goalReachedAt = pushup.timestamp;
+        }
+      }
+      
+      return {
+        id: user.id,
+        name: user.name,
+        total: total,
+        hasReachedGoal: total >= dailyGoal,
+        goalReachedAt: goalReachedAt
+      };
+    }));
+    
+    // Smart sorting: goal achievers by time, others by total
+    leaderboardData.sort((a, b) => {
+      // Both reached goal: sort by time (earliest first)
+      if (a.hasReachedGoal && b.hasReachedGoal) {
+        return new Date(a.goalReachedAt) - new Date(b.goalReachedAt);
+      }
+      
+      // Only one reached goal: goal winner goes first
+      if (a.hasReachedGoal && !b.hasReachedGoal) return -1;
+      if (!a.hasReachedGoal && b.hasReachedGoal) return 1;
+      
+      // Neither reached goal: sort by total (highest first)
+      return b.total - a.total;
+    });
+    
+    res.json(leaderboardData);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/users', async (req, res) => {
   try {
     const { name } = req.body;

@@ -278,28 +278,106 @@ async function addPushup(count = 1) {
 }
 
 async function loadLeaderboard() {
+  try {
+    // Try new leaderboard endpoint first (backward compatible approach)
+    const response = await fetch(`${API_BASE}/leaderboard`);
+    
+    if (response.ok) {
+      // Use new backend-calculated leaderboard
+      const userProgress = await response.json();
+      renderLeaderboard(userProgress);
+    } else {
+      // Fallback to old logic if new endpoint not available
+      console.log('New leaderboard endpoint not available, falling back to old logic');
+      await loadLeaderboardFallback();
+    }
+  } catch (error) {
+    console.log('Error loading new leaderboard, falling back to old logic:', error);
+    await loadLeaderboardFallback();
+  }
+}
+
+async function loadLeaderboardFallback() {
   const response = await fetch(`${API_BASE}/users`);
   const users = await response.json();
   
-  // Get progress for each user
+  // Get progress for each user with detailed push-up data
   const userProgress = await Promise.all(users.map(async (user) => {
     const progressRes = await fetch(`${API_BASE}/pushups/${user.id}`);
     const progress = await progressRes.json();
-    return { ...user, total: progress.total };
+    
+    // Calculate when user reached the daily goal (100)
+    let goalReachedAt = null;
+    let runningTotal = 0;
+    
+    if (progress.pushups && progress.pushups.length > 0) {
+      // Sort pushups by timestamp to find when goal was reached
+      const sortedPushups = progress.pushups.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      
+      for (const pushup of sortedPushups) {
+        runningTotal += pushup.count;
+        if (runningTotal >= dailyGoal && !goalReachedAt) {
+          goalReachedAt = new Date(pushup.timestamp);
+          break;
+        }
+      }
+    }
+    
+    return { 
+      ...user, 
+      total: progress.total,
+      goalReachedAt: goalReachedAt,
+      hasReachedGoal: progress.total >= dailyGoal
+    };
   }));
   
-  // Sort by total descending
-  userProgress.sort((a, b) => b.total - a.total);
+  // Smart sorting: 
+  // 1. Those who reached goal sorted by time (earliest first)
+  // 2. Those who haven't reached goal sorted by total (highest first)
+  userProgress.sort((a, b) => {
+    // Both reached goal: sort by time
+    if (a.hasReachedGoal && b.hasReachedGoal) {
+      return a.goalReachedAt - b.goalReachedAt;
+    }
+    
+    // Only one reached goal: goal winner goes first
+    if (a.hasReachedGoal && !b.hasReachedGoal) return -1;
+    if (!a.hasReachedGoal && b.hasReachedGoal) return 1;
+    
+    // Neither reached goal: sort by total (highest first)
+    return b.total - a.total;
+  });
   
+  renderLeaderboard(userProgress);
+}
+
+function renderLeaderboard(userProgress) {
   const leaderboardList = document.getElementById('leaderboard-list');
   leaderboardList.innerHTML = '';
   
   userProgress.forEach((user, index) => {
     const li = document.createElement('li');
     li.className = userId && user.id == userId ? 'you' : '';
+    
+    // Add visual indicator for goal achievement
+    let achievementIcon = '';
+    if (user.hasReachedGoal) {
+      if (index === 0) {
+        achievementIcon = ' 🏆'; // Winner crown for first to reach goal
+      } else {
+        achievementIcon = ' ✅'; // Checkmark for others who reached goal
+      }
+    }
+    
+    let timeInfo = '';
+    if (user.hasReachedGoal && user.goalReachedAt) {
+      const goalTime = new Date(user.goalReachedAt);
+      timeInfo = ` (um ${goalTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'})})`;
+    }
+    
     li.innerHTML = `
-      <span class="rank">${index + 1}. ${user.name} ${userId && user.id == userId ? '(Du)' : ''}</span>
-      <span class="score">${user.total} Dicke</span>
+      <span class="rank">${index + 1}. ${user.name} ${userId && user.id == userId ? '(Du)' : ''}${achievementIcon}</span>
+      <span class="score">${user.total} Dicke${timeInfo}</span>
     `;
     li.addEventListener('click', () => openUserModal(user));
     leaderboardList.appendChild(li);
