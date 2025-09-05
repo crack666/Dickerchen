@@ -476,20 +476,27 @@ app.listen(PORT, HOST, () => {
   console.log(`LAN access: http://192.168.178.196:${PORT}`);
 });
 
-// HTTPS Server (für PWA)
-try {
-  const httpsOptions = {
-    key: fs.readFileSync(path.join(__dirname, 'key.pem')),
-    cert: fs.readFileSync(path.join(__dirname, 'cert.pem'))
-  };
+// HTTPS Server (für PWA) - nur wenn Zertifikate vorhanden
+const certPath = path.join(__dirname, 'cert.pem');
+const keyPath = path.join(__dirname, 'key.pem');
 
-  https.createServer(httpsOptions, app).listen(HTTPS_PORT, HOST, () => {
-    console.log(`🔒 HTTPS Server running on https://${HOST}:${HTTPS_PORT}`);
-    console.log(`🔒 Local HTTPS access: https://localhost:${HTTPS_PORT}`);
-    console.log(`🔒 LAN HTTPS access: https://192.168.178.196:${HTTPS_PORT}`);
-    console.log(`📱 For PWA: Use HTTPS URL on mobile device`);
-  });
-} catch (error) {
-  console.log('⚠️  HTTPS not available (certificates missing)');
-  console.log('   PWA installation may not work over HTTP');
+if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  try {
+    const httpsOptions = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath)
+    };
+
+    https.createServer(httpsOptions, app).listen(HTTPS_PORT, HOST, () => {
+      console.log(`🔒 HTTPS Server running on https://${HOST}:${HTTPS_PORT}`);
+      console.log(`🔒 Local HTTPS access: https://localhost:${HTTPS_PORT}`);
+      console.log(`🔒 LAN HTTPS access: https://192.168.178.196:${HTTPS_PORT}`);
+      console.log(`📱 For PWA: Use HTTPS URL on mobile device`);
+    });
+  } catch (error) {
+    console.log('⚠️  Could not start HTTPS server:', error.message);
+  }
+} else {
+  console.log('📝 No SSL certificates found - running HTTP only');
+  console.log('💡 HTTPS handled by Fly.io in production');
 }

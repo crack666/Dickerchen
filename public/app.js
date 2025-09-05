@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   loadProgress();
   loadLeaderboard();
+  
+  // Auto-refresh setup
+  setupAutoRefresh();
 
   document.querySelectorAll('.add-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -780,3 +783,131 @@ document.getElementById('test-notifications-btn').onclick = async () => {
     alert('Fehler: ' + error.message);
   }
 };
+
+// Auto-refresh functionality
+let refreshInterval = null;
+let lastUpdateTime = Date.now();
+
+function setupAutoRefresh() {
+  // 1. Refresh when page becomes visible again
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      console.log('🔄 Page visible again - refreshing data');
+      refreshData();
+    }
+  });
+
+  // 2. Refresh when window gains focus (for desktop)
+  window.addEventListener('focus', () => {
+    const timeSinceLastUpdate = Date.now() - lastUpdateTime;
+    if (timeSinceLastUpdate > 10000) { // Only if >10sec since last update
+      console.log('🔄 Window focused - refreshing data');
+      refreshData();
+    }
+  });
+
+  // 3. Periodic refresh every 60 seconds when visible (less aggressive)
+  refreshInterval = setInterval(() => {
+    if (!document.hidden) {
+      refreshData(true); // Silent periodic updates
+    }
+  }, 60000); // Changed from 30 to 60 seconds
+
+  // 4. Simple pull-to-refresh for mobile
+  setupPullToRefresh();
+}
+
+async function refreshData(silent = false) {
+  try {
+    // Don't refresh if user is actively interacting
+    if (isUserInteracting()) {
+      console.log('⏸️ Skipping refresh - user is interacting');
+      return;
+    }
+
+    lastUpdateTime = Date.now();
+    await Promise.all([
+      loadProgress(),
+      loadLeaderboard()
+    ]);
+    
+    if (!silent) {
+      console.log('✅ Data refreshed successfully');
+    }
+  } catch (error) {
+    console.error('❌ Refresh failed:', error);
+  }
+}
+
+function isUserInteracting() {
+  // Check if user is in a modal
+  const modals = ['user-modal', 'login-modal'];
+  if (modals.some(id => {
+    const modal = document.getElementById(id);
+    return modal && modal.style.display === 'block';
+  })) {
+    return true;
+  }
+
+  // Check if user is typing
+  const activeElement = document.activeElement;
+  if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+    return true;
+  }
+
+  // Check if user is in calendar view
+  const calendarModal = document.getElementById('user-modal');
+  if (calendarModal && calendarModal.style.display === 'block') {
+    return true;
+  }
+
+  return false;
+}
+
+function setupPullToRefresh() {
+  let startY = 0;
+  let isPulling = false;
+  const threshold = 100;
+
+  document.addEventListener('touchstart', (e) => {
+    if (window.scrollY === 0) {
+      startY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  });
+
+  document.addEventListener('touchmove', (e) => {
+    if (isPulling && window.scrollY === 0) {
+      const currentY = e.touches[0].clientY;
+      const pullDistance = currentY - startY;
+      
+      if (pullDistance > threshold) {
+        // Visual feedback could be added here
+        document.body.style.background = 'linear-gradient(to bottom, #e3f2fd, #ffffff)';
+      }
+    }
+  });
+
+  document.addEventListener('touchend', (e) => {
+    if (isPulling) {
+      const endY = e.changedTouches[0].clientY;
+      const pullDistance = endY - startY;
+      
+      if (pullDistance > threshold && window.scrollY === 0) {
+        console.log('📱 Pull-to-refresh triggered');
+        refreshData();
+        
+        // Show brief feedback
+        const feedback = document.createElement('div');
+        feedback.textContent = '🔄 Aktualisiere...';
+        feedback.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#4caf50;color:white;padding:8px 16px;border-radius:20px;z-index:1000;';
+        document.body.appendChild(feedback);
+        setTimeout(() => feedback.remove(), 2000);
+      }
+      
+      // Reset visual feedback
+      document.body.style.background = '';
+      isPulling = false;
+    }
+  });
+}
