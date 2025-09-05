@@ -892,11 +892,11 @@ async function showDayDetails(dateStr, total, dayData) {
   document.getElementById('modal-name').textContent = `${userName} - ${displayDate}`;
   document.getElementById('modal-progress').innerHTML = `
     <div style="text-align: center; margin: 20px 0;">
-      <div style="font-size: 48px; font-weight: bold; color: ${total >= 50 ? '#4CAF50' : total > 0 ? '#FF9800' : '#FF5722'};">
+      <div style="font-size: 48px; font-weight: bold; color: ${total >= dailyGoal ? '#4CAF50' : total > 0 ? '#FF9800' : '#FF5722'};">
         ${total}
       </div>
       <div style="color: #666; margin-top: 10px;">
-        ${total >= 50 ? '🎉 Ziel erreicht!' : total > 0 ? '⚠️ Teilweise erfüllt' : '❌ Kein Training'}
+        ${total >= dailyGoal ? '🎉 Ziel erreicht!' : total > 0 ? '⚠️ Teilweise erfüllt' : '❌ Kein Training'}
       </div>
     </div>
   `;

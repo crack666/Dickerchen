@@ -264,15 +264,17 @@ app.post('/api/pushups', async (req, res) => {
 
 app.get('/api/pushups/:userId', async (req, res) => {
   try {
-    // Get today's date in local format
+    // Get today's date in Berlin timezone to match calendar
     const today = new Date();
-    const todayStr = today.getFullYear() + '-' + 
-                    String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-                    String(today.getDate()).padStart(2, '0');
+    const berlinToday = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
+    const todayStr = berlinToday.getFullYear() + '-' + 
+                    String(berlinToday.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(berlinToday.getDate()).padStart(2, '0');
     
     const result = await pool.query(`
       SELECT * FROM pushups 
-      WHERE user_id = $1 AND DATE(timestamp) = $2
+      WHERE user_id = $1 
+      AND to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
     `, [req.params.userId, todayStr]);
     
     const total = result.rows.reduce((sum, p) => sum + p.count, 0);
