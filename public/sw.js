@@ -1,7 +1,7 @@
 // Dickerchen Service Worker
 // Supports: offline core assets, push notifications, dev-friendly behaviour
 
-const VERSION = 'v4'; // bump to force update
+const VERSION = 'v5'; // bump to force update - Slider & Login Button Fix
 const DEV = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
 const CORE_CACHE = `dickerchen-core-${VERSION}`;
 const RUNTIME_CACHE = `dickerchen-runtime-${VERSION}`;
@@ -26,12 +26,19 @@ function log(...args) {
 // Install: pre-cache core assets (skip if dev & user refreshing often; still cache minimal)
 self.addEventListener('install', event => {
 	log('install', VERSION, 'DEV=', DEV);
-	self.skipWaiting();
+	self.skipWaiting(); // Force immediate activation
 	event.waitUntil(
 		caches.open(CORE_CACHE).then(async cache => {
 			try {
-				await cache.addAll(CORE_ASSETS);
-				log('core cached');
+				// Add cache-busting for critical files
+				const assetsWithCacheBust = CORE_ASSETS.map(url => {
+					if (url.includes('.css') || url.includes('.js')) {
+						return `${url}?v=${VERSION}`;
+					}
+					return url;
+				});
+				await cache.addAll(assetsWithCacheBust);
+				log('core cached with version', VERSION);
 			} catch (e) {
 				log('core cache error', e);
 			}
@@ -39,9 +46,9 @@ self.addEventListener('install', event => {
 	);
 });
 
-// Activate: clean old caches
+// Activate: clean old caches and force client reload
 self.addEventListener('activate', event => {
-	log('activate');
+	log('activate - forcing client update');
 	event.waitUntil(
 		(async () => {
 			const names = await caches.keys();
@@ -50,7 +57,19 @@ self.addEventListener('activate', event => {
 					.map(n => caches.delete(n))
 			);
 			await self.clients.claim();
-			log('old caches cleared');
+			
+			// Force all clients to reload to get new version (safely)
+			try {
+				const clients = await self.clients.matchAll();
+				clients.forEach(client => {
+					if (client.url && client.url.includes('dickerchen')) {
+						client.postMessage({ type: 'UPDATE_AVAILABLE' });
+					}
+				});
+				log('clients notified safely');
+			} catch (e) {
+				log('client notification failed (non-critical):', e);
+			}
 		})()
 	);
 });

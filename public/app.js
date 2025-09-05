@@ -255,12 +255,64 @@ document.addEventListener('DOMContentLoaded', async () => {
       .then(reg => {
         console.log('✅ Service Worker registered successfully');
         console.log('� PWA features and push notifications are now available');
+        
+        // Check for updates
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // New update available
+                console.log('🔄 New app version available!');
+                showUpdateNotification();
+              }
+            });
+          }
+        });
+        
+        // Force immediate check for updates
+        reg.update();
       })
       .catch(err => {
         console.error('❌ Service Worker registration failed:', err);
       });
   } else {
     console.warn('⚠️ Service Worker not supported - PWA features unavailable');
+  }
+  
+  // Function to show update notification
+  function showUpdateNotification() {
+    const updateBanner = document.createElement('div');
+    updateBanner.id = 'update-banner';
+    updateBanner.innerHTML = `
+      <div style="background: #2196F3; color: white; padding: 10px; text-align: center; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; font-size: 14px;">
+        🔄 Neue Version verfügbar! 
+        <button onclick="location.reload()" style="background: white; color: #2196F3; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 5px; cursor: pointer;">
+          Jetzt aktualisieren
+        </button>
+        <button onclick="this.parentElement.parentElement.remove()" style="background: transparent; color: white; border: 1px solid white; padding: 5px 10px; margin-left: 5px; border-radius: 5px; cursor: pointer;">
+          Später
+        </button>
+      </div>
+    `;
+    document.body.appendChild(updateBanner);
+  }
+  
+  // Listen for Service Worker messages (safely)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', event => {
+      try {
+        if (event.data && event.data.type === 'UPDATE_AVAILABLE') {
+          console.log('🔄 Service Worker says update available!');
+          // Only show update notification if no banner exists already
+          if (!document.getElementById('update-banner')) {
+            showUpdateNotification();
+          }
+        }
+      } catch (e) {
+        console.log('Service Worker message handling failed (non-critical):', e);
+      }
+    });
   }
 
   // Initialize calendar navigation
