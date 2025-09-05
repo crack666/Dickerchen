@@ -138,13 +138,19 @@ async function cachePut(cacheName, request, response) {
 self.addEventListener('push', event => {
 	let data = {};
 	try { data = event.data ? event.data.json() : {}; } catch (e) {}
-	const title = data.title || 'Dickerchen';
+	
+	// Include sender name in title if available
+	let title = data.title || 'Dickerchen';
+	if (data.fromUserName) {
+		title = `${title} (von ${data.fromUserName})`;
+	}
+	
 	const body = data.body || 'Zeit für ein paar Dicke!';
 	const options = {
 		body,
 		icon: '/icon-192.svg',
 		badge: '/icon-192.svg',
-		data: data.url || '/',
+		data: data.data || '/',
 	};
 	event.waitUntil(self.registration.showNotification(title, options));
 });

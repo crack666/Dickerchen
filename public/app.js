@@ -593,11 +593,21 @@ function initCalendarNavigation() {
 async function nudgeUser(user) {
   try {
     const nudgeMessages = [
-      `Ey ${user.name}, mach deine Dicken! Ich habe schon [mein total] gemacht! 💪`,
-      `Hey ${user.name}, Zeit für Push-ups! Du bist bei ${user.total}, ich bei [mein total]! 🏋️‍♂️`,
-      `Anstupsen! ${user.name}, nur noch [ziel - dein total] bis zum Ziel! 🔥`,
-      `Yo ${user.name}, Dicken-Time! Ich bin voraus mit [mein total]! 🚀`,
-      `Motivation! ${user.name}, du hast ${user.total} – lass uns pushen! 💥`
+      `Ey ${user.name}, mach deine Dicken! [sender] hat schon [mein total] gemacht! 💪`,
+      `Hey ${user.name}, Zeit für Push-ups! Du bist bei ${user.total}, [sender] bei [mein total]! 🏋️‍♂️`,
+      `Anstupsen! ${user.name}, nur noch [ziel - dein total] bis zum Ziel! [sender] pusht mit! 🔥`,
+      `Yo ${user.name}, Dicken-Time! [sender] ist voraus mit [mein total]! 🚀`,
+      `Motivation! ${user.name}, du hast ${user.total} – [sender] sagt: lass uns pushen! 💥`,
+      `${user.name}, du willst den Body? Dann musst du pushen! [sender] ist bei [mein total]! 🔥💪`,
+      `Keine Ausreden, ${user.name}! [sender] hat [mein total] geschafft - wo bleibst du? 😤`,
+      `${user.name}, der Boden wartet auf dich! [sender] zeigt dir mit [mein total] wie's geht! 🤸‍♂️`,
+      `Push it real good, ${user.name}! [sender] ist schon bei [mein total] - catch up! 🎵💪`,
+      `${user.name}, Couch-Potato-Modus beenden! [sender] pusht schon mit [mein total]! 🛋️➡️💪`,
+      `Alarmstufe Rot, ${user.name}! [sender] dominiert mit [mein total] Push-ups! 🚨`,
+      `${user.name}, Zeit für Gainz! [sender] sammelt schon Muskeln mit [mein total]! 🏆`,
+      `Hol dir die Dicken, ${user.name}! [sender] ist bei [mein total] - Game on! 🎮💪`,
+      `${user.name}, der Schweinehund ruft - aber [sender] antwortet mit [mein total]! 🐕‍🦺`,
+      `Push-up Challenge accepted? ${user.name}, [sender] ist bei [mein total]! Challenge! 🏁`
     ];
     
     // Get my progress
@@ -607,15 +617,17 @@ async function nudgeUser(user) {
     let message = nudgeMessages[Math.floor(Math.random() * nudgeMessages.length)];
     message = message.replace('[mein total]', myData.total);
     message = message.replace('[ziel - dein total]', Math.max(0, dailyGoal - user.total));
+    message = message.replace('[sender]', userName || 'Ein Freund');
     
     console.log('Sending notification to user:', user.id, 'Message:', message);
     
-    // Send notification - fix parameter names
+    // Send notification - include sender info
     const response = await fetch(`${API_BASE}/send-notification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         userId: user.id, 
+        fromUserId: userId,
         title: 'Dickerchen Anstupser! 💪', 
         body: message 
       })

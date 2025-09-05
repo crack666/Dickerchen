@@ -357,8 +357,8 @@ app.post('/api/subscribe', async (req, res) => {
 // Send notification endpoint - load from database
 app.post('/api/send-notification', async (req, res) => {
   try {
-    const { userId, title, body } = req.body;
-    console.log('Sending notification to user:', userId, 'Title:', title, 'Body:', body);
+    const { userId, title, body, fromUserId } = req.body;
+    console.log('Sending notification to user:', userId, 'From:', fromUserId, 'Title:', title, 'Body:', body);
     
     // Get subscription from database
     const result = await pool.query(
@@ -379,12 +379,26 @@ app.post('/api/send-notification', async (req, res) => {
     
     console.log('✅ Subscription loaded from database for user:', userId);
 
+    // Get sender name if fromUserId is provided
+    let senderName = null;
+    if (fromUserId) {
+      const senderResult = await pool.query('SELECT name FROM users WHERE id = $1', [parseInt(fromUserId)]);
+      if (senderResult.rows.length > 0) {
+        senderName = senderResult.rows[0].name;
+        console.log('✅ Sender name found:', senderName);
+      }
+    }
+
     const payload = JSON.stringify({
       title: title || 'Dickerchen',
       body: body || 'Zeit für deine Dicke! 💪',
       icon: '/icon-192.svg',
       badge: '/icon-192.svg',
-      data: { userId }
+      data: { 
+        userId,
+        fromUserId,
+        fromUserName: senderName
+      }
     });
 
     console.log('Sending push notification with payload:', payload);
