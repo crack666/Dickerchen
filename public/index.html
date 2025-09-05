@@ -21,13 +21,13 @@
       <div id="today-view" class="view active">
         <div id="dashboard">
           <div id="progress">
-            <h2>Dein Fortschritt heute</h2>
+            <div class="progress-header">
+              <h2>Dein Fortschritt heute</h2>
+              <button id="share-progress" class="share-btn" style="display: none;">📤 Teilen</button>
+            </div>
             <div id="progress-bar">
               <div id="progress-fill"></div>
               <p id="progress-text">0 / 100</p>
-            </div>
-            <div class="progress-info">
-              <button id="share-progress" class="share-btn" style="display: none;">📤 Teilen</button>
             </div>
           </div>
           <div id="add-pushups">
@@ -37,10 +37,9 @@
               <button class="add-btn" data-count="30">💪💪💪 +30</button>
             </div>
             <div id="custom-input">
-              <label for="custom-slider">Eigene Anzahl:</label>
               <input type="range" id="custom-slider" min="1" max="100" value="10">
               <span id="slider-value">10</span>
-              <button id="add-custom">Hinzufügen</button>
+              <button id="add-custom">+</button>
             </div>
           </div>
           <div id="leaderboard">
