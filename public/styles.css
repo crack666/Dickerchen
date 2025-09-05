@@ -52,6 +52,40 @@ header p {
   font-size: 1.2em;
 }
 
+.header-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.save-btn {
+  background: #FF9800;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+  opacity: 0;
+  transform: scale(0.8);
+  width: 0;
+  overflow: hidden;
+}
+
+.save-btn.visible {
+  opacity: 1;
+  transform: scale(1);
+  width: auto;
+  padding: 6px 10px;
+}
+
+.save-btn:hover {
+  background: #F57C00;
+  transform: scale(1.05);
+}
+
 .share-btn {
   background: #2196F3;
   color: white;
@@ -72,19 +106,93 @@ header p {
   height: 30px;
   background-color: #ddd;
   border-radius: 15px;
-  overflow: hidden;
-  margin: 10px 0;
+  overflow: visible;
   position: relative;
+  margin: 10px 0;
 }
 
 #progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #4CAF50, #45a049);
   width: 0%;
-  transition: width 0.8s ease-out;
+  transition: width 0.3s ease-out;
   border-radius: 15px;
   position: relative;
   overflow: hidden;
+  pointer-events: none;
+}
+
+#progress-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: grab;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border-radius: 15px;
+  z-index: 10;
+}
+
+#progress-slider:active {
+  cursor: grabbing;
+}
+
+#progress-slider:focus {
+  outline: none;
+}
+
+/* Custom slider thumb that looks like our orange bubble */
+#progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FF9800;
+  border: 2px solid white;
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  opacity: 1;
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 15;
+}
+
+#progress-slider::-webkit-slider-thumb:hover {
+  background: #F57C00;
+  transform: scale(1.15);
+  box-shadow: 0 2px 12px rgba(255, 152, 0, 0.4);
+}
+
+#progress-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+  background: #E65100;
+}
+
+#progress-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FF9800;
+  border: 2px solid white;
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: all 0.2s ease;
+}
+
+#progress-slider::-moz-range-thumb:hover {
+  background: #F57C00;
+  transform: scale(1.15);
+}
+
+#progress-slider::-moz-range-thumb:active {
+  background: #E65100;
+  transform: scale(1.2);
 }
 
 #progress-fill::after {
@@ -166,67 +274,6 @@ button:active {
 
 .share-btn:hover {
   background: linear-gradient(135deg, #764ba2, #667eea);
-}
-
-#custom-input {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 10px 15px;
-  background: rgba(255,255,255,0.9);
-  border-radius: 15px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-#custom-slider {
-  flex: 1;
-  max-width: 120px;
-  height: 8px;
-  border-radius: 4px;
-  background: #ddd;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-#custom-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #4CAF50;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-#custom-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #4CAF50;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-#slider-value {
-  font-size: 18px;
-  font-weight: bold;
-  color: #4CAF50;
-  min-width: 30px;
-  text-align: center;
-}
-
-#custom-input button {
-  padding: 8px 12px;
-  font-size: 16px;
-  font-weight: bold;
-  min-width: 40px;
-  border-radius: 8px;
 }
 
 #friends-list {
@@ -680,4 +727,38 @@ button:active {
   #custom-slider {
     max-width: 250px;
   }
+}
+
+/* Login Button Specific Styling */
+#login-btn {
+  background: #2196F3 !important;
+  background-image: none !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+  transition: all 0.2s ease !important;
+  max-width: 120px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  position: fixed !important;
+  top: 10px !important;
+  right: 10px !important;
+  z-index: 1000 !important;
+}
+
+#login-btn:hover {
+  background: #1976D2 !important;
+  background-image: none !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3) !important;
+}
+
+#login-btn:active {
+  transform: translateY(0) !important;
 }

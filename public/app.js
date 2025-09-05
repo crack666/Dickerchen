@@ -48,19 +48,197 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
   
-  const slider = document.getElementById('custom-slider');
-  const sliderValue = document.getElementById('slider-value');
-  slider.addEventListener('input', () => {
-    sliderValue.textContent = slider.value;
-  });
+  // Progress bar slider functionality
+  const progressSlider = document.getElementById('progress-slider');
+  const progressText = document.getElementById('progress-text');
+  const progressFill = document.getElementById('progress-fill');
+  const saveBtn = document.getElementById('save-progress');
+  let currentPushups = 0;
+  let isSliding = false;
+  let sliderInitialized = false;
   
-  document.getElementById('add-custom').addEventListener('click', () => {
-    if (!userId) {
-      alert('Bitte gib erst deinen Namen ein!');
+  // Initialize slider with current progress - make this globally accessible
+  window.initializeSlider = function() {
+    // Get the MOST current value to avoid race conditions
+    currentPushups = getCurrentPushups();
+    console.log(`Initializing slider: currentPushups = ${currentPushups}`);
+    
+    // Double-check we have valid data before proceeding
+    if (currentPushups === undefined || currentPushups === null || isNaN(currentPushups)) {
+      console.warn('currentPushups is invalid, delaying initialization');
+      setTimeout(() => window.initializeSlider(), 100);
       return;
     }
-    const count = parseInt(slider.value);
-    if (count > 0) addPushup(count);
+    
+    // Set strict boundaries
+    progressSlider.min = currentPushups; // Can't go below current progress
+    progressSlider.max = dailyGoal;
+    progressSlider.value = currentPushups;
+    
+    // Mark as initialized BEFORE updating display
+    sliderInitialized = true;
+    
+    // Force update to ensure everything is in sync
+    updateSliderDisplay();
+    
+    console.log(`Slider initialized: min=${progressSlider.min}, max=${progressSlider.max}, value=${progressSlider.value}`);
+  };
+  
+  // Update both progress fill and slider position
+  function updateSliderDisplay() {
+    const sliderValue = parseInt(progressSlider.value);
+    const progress = (sliderValue / dailyGoal) * 100;
+    
+    // Update progress fill to match slider
+    progressFill.style.width = `${progress}%`;
+    progressText.textContent = `${sliderValue} / ${dailyGoal}`;
+    
+    // Show/hide save button
+    if (sliderValue !== currentPushups) {
+      saveBtn.classList.add('visible');
+    } else {
+      saveBtn.classList.remove('visible');
+    }
+  }
+  
+  // Slider input event - with additional safety checks
+  progressSlider.addEventListener('input', () => {
+    // Don't allow changes until properly initialized
+    if (!sliderInitialized) {
+      console.log('Slider not yet initialized, blocking input');
+      progressSlider.value = 0; // Reset to safe value
+      return;
+    }
+    
+    isSliding = true;
+    const sliderValue = parseInt(progressSlider.value);
+    
+    // Get fresh current value to be absolutely sure
+    const freshCurrentPushups = getCurrentPushups();
+    
+    // HARD enforce minimum - can't go below current progress
+    if (sliderValue < freshCurrentPushups) {
+      console.log(`Preventing slider below minimum: ${sliderValue} < ${freshCurrentPushups}`);
+      progressSlider.value = freshCurrentPushups;
+      progressSlider.min = freshCurrentPushups; // Re-enforce min attribute
+      updateSliderDisplay();
+      return;
+    }
+    
+    updateSliderDisplay();
+  });
+  
+  // Additional enforcement on change event
+  progressSlider.addEventListener('change', () => {
+    // Don't allow changes until properly initialized
+    if (!sliderInitialized) {
+      console.log('Slider not yet initialized, blocking change');
+      progressSlider.value = 0; // Reset to safe value
+      return;
+    }
+    
+    const sliderValue = parseInt(progressSlider.value);
+    const freshCurrentPushups = getCurrentPushups();
+    
+    if (sliderValue < freshCurrentPushups) {
+      console.log(`Change event: Resetting slider to minimum: ${freshCurrentPushups}`);
+      progressSlider.value = freshCurrentPushups;
+      progressSlider.min = freshCurrentPushups; // Re-enforce min attribute
+      updateSliderDisplay();
+    }
+  });
+  
+  // Prevent slider interaction until properly initialized
+  progressSlider.addEventListener('mousedown', (e) => {
+    if (!sliderInitialized) {
+      console.log('Slider not initialized, preventing mousedown');
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+    isSliding = true;
+  });
+  
+  progressSlider.addEventListener('touchstart', (e) => {
+    if (!sliderInitialized) {
+      console.log('Slider not initialized, preventing touchstart');
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+    isSliding = true;
+  });
+  
+  // Reset on blur only if not actively interacting
+  progressSlider.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (isSliding) {
+        resetSlider();
+      }
+    }, 100); // Small delay to allow save button click
+  });
+  
+  function resetSlider() {
+    console.log(`Resetting slider from isSliding=${isSliding}`);
+    isSliding = false;
+    
+    // Get fresh current value
+    const freshCurrentPushups = getCurrentPushups();
+    currentPushups = freshCurrentPushups;
+    
+    // Re-enforce boundaries after reset
+    progressSlider.min = currentPushups;
+    progressSlider.value = currentPushups;
+    updateSliderDisplay();
+    saveBtn.classList.remove('visible');
+    
+    console.log(`Slider reset to: min=${progressSlider.min}, value=${progressSlider.value}`);
+  }
+  
+  // Save button with proper event handling
+  document.getElementById('save-progress').addEventListener('mousedown', (e) => {
+    e.preventDefault(); // Prevent blur event
+  });
+  
+  document.getElementById('save-progress').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!userId) {
+      alert('Bitte gib erst deinen Namen ein!');
+      resetSlider();
+      return;
+    }
+    
+    const newTotal = parseInt(progressSlider.value);
+    const oldTotal = currentPushups;
+    const toAdd = newTotal - oldTotal; // Calculate difference (what to add)
+    
+    console.log(`Save attempt: newTotal=${newTotal}, oldTotal=${oldTotal}, toAdd=${toAdd}`);
+    
+    // SAFETY NET: Prevent saving if new total is below current total
+    if (newTotal < oldTotal) {
+      console.warn(`SAFETY NET TRIGGERED: Attempted to save ${newTotal} which is below current ${oldTotal}`);
+      alert(`Fehler: Du kannst nicht unter deinen aktuellen Wert von ${oldTotal} gehen!`);
+      resetSlider();
+      return;
+    }
+    
+    if (toAdd > 0) {
+      isSliding = false; // Prevent reset during save
+      addPushup(toAdd); // Add only the difference, not the total
+      
+      // Update current pushups immediately to prevent double-save
+      currentPushups = newTotal;
+      saveBtn.classList.remove('visible');
+    } else if (toAdd === 0) {
+      // No change, just reset
+      resetSlider();
+    } else {
+      // This should never happen due to safety net above, but just in case
+      console.error(`Unexpected negative toAdd value: ${toAdd}`);
+      resetSlider();
+    }
   });
 
   // Modal functionality
@@ -91,17 +269,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Add login button
   const loginBtn = document.createElement('button');
   loginBtn.id = 'login-btn';
-  loginBtn.textContent = userId ? `Angemeldet als: ${userName}` : 'Namen eingeben';
-  loginBtn.style.position = 'fixed';
-  loginBtn.style.top = '10px';
-  loginBtn.style.right = '10px';
-  loginBtn.style.zIndex = '1000';
+  loginBtn.textContent = userId ? `${userName}` : 'Login';
   loginBtn.addEventListener('click', () => {
     const newName = prompt('Gib deinen Namen ein:');
     if (newName) {
       createOrLoginUser(newName);
     }
   });
+  
   document.body.appendChild(loginBtn);
 });
 
@@ -166,7 +341,7 @@ async function createOrLoginUser(name) {
   }
   
   // Update login button
-  document.getElementById('login-btn').textContent = `Angemeldet als: ${userName}`;
+  document.getElementById('login-btn').textContent = `${userName}`;
   
   // Request notification permission and subscribe after login
   if ('Notification' in window) {
@@ -200,8 +375,7 @@ async function createOrLoginUser(name) {
 async function loadProgress() {
   if (!userId) {
     // Show default progress for non-logged users
-    document.getElementById('progress-fill').style.width = '0%';
-    document.getElementById('progress-text').textContent = `0 / ${dailyGoal}`;
+    updateProgressDisplay(0);
     document.getElementById('motivation').textContent = 'Melde dich an, um deine Dicken zu tracken! 💪';
     document.getElementById('share-progress').style.display = 'none';
     return;
@@ -209,9 +383,21 @@ async function loadProgress() {
   
   const response = await fetch(`${API_BASE}/pushups/${userId}`);
   const data = await response.json();
-  const progress = (data.total / dailyGoal) * 100;
-  document.getElementById('progress-fill').style.width = `${progress}%`;
-  document.getElementById('progress-text').textContent = `${data.total} / ${dailyGoal}`;
+  
+  // Store current total for slider functionality - CRITICAL: Do this FIRST
+  window.currentPushups = data.total;
+  
+  updateProgressDisplay(data.total);
+  
+  // Initialize slider AFTER we have the correct currentPushups value
+  // Use setTimeout to ensure DOM is ready and values are set
+  setTimeout(() => {
+    if (typeof window.initializeSlider === 'function') {
+      window.initializeSlider();
+    } else {
+      console.error('initializeSlider function not found!');
+    }
+  }, 50);
   
   // Show share button if user has made progress
   const shareBtn = document.getElementById('share-progress');
@@ -224,6 +410,17 @@ async function loadProgress() {
   
   // Update motivation message
   updateMotivation(data.total);
+}
+
+function updateProgressDisplay(total = null) {
+  const currentTotal = total !== null ? total : getCurrentPushups();
+  const progress = (currentTotal / dailyGoal) * 100;
+  document.getElementById('progress-fill').style.width = `${progress}%`;
+  document.getElementById('progress-text').textContent = `${currentTotal} / ${dailyGoal}`;
+}
+
+function getCurrentPushups() {
+  return window.currentPushups || 0;
 }
 
 function updateMotivation(total) {
@@ -268,13 +465,22 @@ function shareProgress(total) {
 }
 
 async function addPushup(count = 1) {
-  await fetch(`${API_BASE}/pushups`, {
+  const response = await fetch(`${API_BASE}/pushups`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, count })
   });
-  loadProgress();
-  loadLeaderboard();
+  
+  if (response.ok) {
+    loadProgress();
+    loadLeaderboard();
+  } else {
+    console.error('Failed to add pushups');
+    // Reset slider on error
+    if (typeof resetSlider === 'function') {
+      resetSlider();
+    }
+  }
 }
 
 async function loadLeaderboard() {

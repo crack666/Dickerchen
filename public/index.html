@@ -23,10 +23,14 @@
           <div id="progress">
             <div class="progress-header">
               <h2>Dein Fortschritt heute</h2>
-              <button id="share-progress" class="share-btn" style="display: none;">📤 Teilen</button>
+              <div class="header-buttons">
+                <button id="save-progress" class="save-btn">💾</button>
+                <button id="share-progress" class="share-btn" style="display: none;">📤 Teilen</button>
+              </div>
             </div>
             <div id="progress-bar">
               <div id="progress-fill"></div>
+              <input type="range" id="progress-slider" min="1" max="100" value="10" step="1">
               <p id="progress-text">0 / 100</p>
             </div>
           </div>
@@ -35,11 +39,6 @@
               <button class="add-btn" data-count="10">💪 +10</button>
               <button class="add-btn" data-count="20">💪💪 +20</button>
               <button class="add-btn" data-count="30">💪💪💪 +30</button>
-            </div>
-            <div id="custom-input">
-              <input type="range" id="custom-slider" min="1" max="100" value="10">
-              <span id="slider-value">10</span>
-              <button id="add-custom">+</button>
             </div>
           </div>
           <div id="leaderboard">
