@@ -30,6 +30,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auto-refresh setup
   setupAutoRefresh();
 
+  // Emoji celebration function
+  function createEmojiCelebration(count) {
+    const emojiMap = {
+      10: ['💪', '🏋️', '🔥', '⚡'],
+      20: ['💪💪', '🏋️‍♂️', '🔥🔥', '⚡⚡', '🚀'],
+      30: ['💪💪💪', '🏋️‍♀️', '🔥🔥🔥', '⚡⚡⚡', '🚀🚀', '💥']
+    };
+
+    const emojis = emojiMap[count] || ['💪', '🔥', '⚡'];
+    const emojiCount = Math.min(count / 10 + 2, 8); // More emojis for higher counts
+
+    for (let i = 0; i < emojiCount; i++) {
+      setTimeout(() => {
+        const emoji = document.createElement('div');
+        emoji.className = 'emoji-celebration';
+        emoji.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+
+        // Random starting position near the clicked button
+        const startX = Math.random() * window.innerWidth * 0.8 + window.innerWidth * 0.1;
+        const startY = Math.random() * window.innerHeight * 0.6 + window.innerHeight * 0.2;
+
+        emoji.style.left = startX + 'px';
+        emoji.style.top = startY + 'px';
+
+        document.body.appendChild(emoji);
+
+        // Remove emoji after animation
+        setTimeout(() => {
+          if (emoji.parentNode) {
+            emoji.parentNode.removeChild(emoji);
+          }
+        }, 2500);
+      }, i * 100); // Stagger the emojis
+    }
+  }
+
   // Debug: Check if add buttons exist
   const addButtons = document.querySelectorAll('.add-btn');
   console.log(`🔍 Found ${addButtons.length} add buttons:`, addButtons);
@@ -573,6 +609,9 @@ async function addPushup(count = 1) {
       await loadLeaderboard();
       
       console.log('🔄 Data refresh completed');
+      
+      // 🎉 Create emoji celebration!
+      createEmojiCelebration(count);
     } else {
       console.error('❌ Failed to add pushups, response:', response);
       // Reset slider on error
