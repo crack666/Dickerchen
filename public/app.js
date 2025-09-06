@@ -17,6 +17,62 @@ let userId = localStorage.getItem('userId') || null;
 let userName = localStorage.getItem('userName') || null;
 let dailyGoal = 100;
 
+// Emoji celebration function - defined globally
+function createEmojiCelebration(count) {
+  // Detect if we're on mobile/small screen
+  const isMobile = window.innerWidth < 768;
+  const isSmallScreen = window.innerHeight < 600;
+
+  // Reduce emoji count for smaller screens
+  const baseCount = isMobile ? Math.min(count / 15 + 1, 4) : Math.min(count / 10 + 2, 6);
+  const emojiCount = Math.floor(baseCount);
+
+  // Shorter duration for mobile
+  const animationDuration = isMobile ? 1800 : 2500;
+
+  const emojiMap = {
+    10: ['💪', '🏋️', '🔥', '⚡'],
+    20: ['💪💪', '🏋️‍♂️', '🔥🔥', '⚡⚡', '🚀'],
+    30: ['💪💪💪', '🏋️‍♀️', '🔥🔥🔥', '⚡⚡⚡', '🚀🚀', '💥']
+  };
+
+  const emojis = emojiMap[count] || ['💪', '🔥', '⚡'];
+
+  for (let i = 0; i < emojiCount; i++) {
+    setTimeout(() => {
+      const emoji = document.createElement('div');
+      emoji.className = 'emoji-celebration';
+      emoji.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+
+      // More controlled starting positions - centered and away from edges
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+
+      // Random offset from center, but keep within safe bounds
+      const maxOffsetX = Math.min(window.innerWidth * 0.25, 150); // Max 25% of screen or 150px
+      const maxOffsetY = Math.min(window.innerHeight * 0.2, 100);  // Max 20% of screen or 100px
+
+      const offsetX = (Math.random() - 0.5) * maxOffsetX * 2; // -maxOffset to +maxOffset
+      const offsetY = (Math.random() - 0.5) * maxOffsetY * 2;
+
+      const startX = Math.max(50, Math.min(window.innerWidth - 50, centerX + offsetX));
+      const startY = Math.max(100, Math.min(window.innerHeight - 100, centerY + offsetY));
+
+      emoji.style.left = startX + 'px';
+      emoji.style.top = startY + 'px';
+
+      document.body.appendChild(emoji);
+
+      // Remove emoji after animation
+      setTimeout(() => {
+        if (emoji.parentNode) {
+          emoji.parentNode.removeChild(emoji);
+        }
+      }, animationDuration);
+    }, i * (isMobile ? 150 : 100)); // Slower stagger on mobile
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await initializeUser();
 
@@ -29,42 +85,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Auto-refresh setup
   setupAutoRefresh();
-
-  // Emoji celebration function
-  function createEmojiCelebration(count) {
-    const emojiMap = {
-      10: ['💪', '🏋️', '🔥', '⚡'],
-      20: ['💪💪', '🏋️‍♂️', '🔥🔥', '⚡⚡', '🚀'],
-      30: ['💪💪💪', '🏋️‍♀️', '🔥🔥🔥', '⚡⚡⚡', '🚀🚀', '💥']
-    };
-
-    const emojis = emojiMap[count] || ['💪', '🔥', '⚡'];
-    const emojiCount = Math.min(count / 10 + 2, 8); // More emojis for higher counts
-
-    for (let i = 0; i < emojiCount; i++) {
-      setTimeout(() => {
-        const emoji = document.createElement('div');
-        emoji.className = 'emoji-celebration';
-        emoji.textContent = emojis[Math.floor(Math.random() * emojis.length)];
-
-        // Random starting position near the clicked button
-        const startX = Math.random() * window.innerWidth * 0.8 + window.innerWidth * 0.1;
-        const startY = Math.random() * window.innerHeight * 0.6 + window.innerHeight * 0.2;
-
-        emoji.style.left = startX + 'px';
-        emoji.style.top = startY + 'px';
-
-        document.body.appendChild(emoji);
-
-        // Remove emoji after animation
-        setTimeout(() => {
-          if (emoji.parentNode) {
-            emoji.parentNode.removeChild(emoji);
-          }
-        }, 2500);
-      }, i * 100); // Stagger the emojis
-    }
-  }
 
   // Debug: Check if add buttons exist
   const addButtons = document.querySelectorAll('.add-btn');
