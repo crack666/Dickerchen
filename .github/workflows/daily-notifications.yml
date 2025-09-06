@@ -1,0 +1,70 @@
+name: Smart Notifications
+
+on:
+  schedule:
+    # Check every 2 hours during active times (Berlin time)
+    - cron: '0 7,9,11,13,15,17,19 * * *'  # 9,11,13,15,17,19 Berlin time
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run notifications'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  smart-notifications:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check if it's a good time for notifications
+      id: time_check
+      run: |
+        # Get current hour in Berlin timezone (UTC+2)
+        BERLIN_HOUR=$(( $(date -u +%H) + 2 ))
+        CURRENT_MINUTE=$(date -u +%M)
+
+        echo "Current Berlin hour: $BERLIN_HOUR"
+        echo "Current minute: $CURRENT_MINUTE"
+
+        # Only run during reasonable hours
+        if [ $BERLIN_HOUR -ge 9 ] && [ $BERLIN_HOUR -le 19 ]; then
+          echo "should_run=true" >> $GITHUB_OUTPUT
+
+          # Determine time slot
+          if [ $BERLIN_HOUR -ge 9 ] && [ $BERLIN_HOUR -le 12 ]; then
+            echo "time_slot=morning" >> $GITHUB_OUTPUT
+          elif [ $BERLIN_HOUR -ge 13 ] && [ $BERLIN_HOUR -le 16 ]; then
+            echo "time_slot=afternoon" >> $GITHUB_OUTPUT
+          else
+            echo "time_slot=evening" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "should_run=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Send smart notifications
+      if: steps.time_check.outputs.should_run == 'true' || github.event.inputs.force_run == true
+      run: |
+        TIME_SLOT="${{ steps.time_check.outputs.time_slot }}"
+        echo "🔔 Smart notifications at $(date) - Time slot: $TIME_SLOT"
+
+        # Try to wake up server first
+        echo "🌅 Attempting to wake up server..."
+        curl -s --max-time 5 https://dickerchen.fly.dev/api/test || echo "Server wake-up attempt failed"
+
+        # Wait a moment
+        sleep 3
+
+        # Send notifications with timeout
+        if curl -f --max-time 15 https://dickerchen.fly.dev/api/send-notifications/$TIME_SLOT \
+          -H "Authorization: Bearer ${{ secrets.NOTIFICATION_SECRET }}" \
+          -H "Content-Type: application/json" 2>/dev/null; then
+          echo "✅ Smart notifications sent successfully"
+        else
+          echo "⚠️ Server unreachable or notifications failed - will try again later"
+        fi
+
+    - name: Log result
+      run: |
+        echo "📊 Smart notification check completed at $(date)"

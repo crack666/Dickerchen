@@ -33,6 +33,8 @@ Eine Progressive Web App für Push-up Challenges mit sozialen Features, intellig
 - **Sender-Identifikation:** Du siehst immer, wer dich angestupst hat
 - **Cross-Browser Support:** Funktioniert zwischen verschiedenen Geräten
 - **Smart Timing:** Berücksichtigt Benutzeraktivität
+- **Hybride Zustellung:** GitHub Actions + Server Fallback für Fly.io
+- **Nicht-nervig:** Zufällige Zeiten, Rate Limiting, User-Kategorisierung
 
 ### 🔄 **Auto-Refresh System**
 - **Page Visibility API:** Automatisches Update beim App-Wechsel

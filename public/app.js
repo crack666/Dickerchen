@@ -773,6 +773,31 @@ async function loadAlltimeStats() {
   const totalData = await totalResponse.json();
   document.getElementById('total-text').textContent = `${totalData.total} Dicke insgesamt`;
   
+  // Load yearly potential if user is logged in
+  if (userId) {
+    try {
+      const potentialResponse = await fetch(`${API_BASE}/pushups/${userId}/yearly-potential`);
+      const potentialData = await potentialResponse.json();
+      const potentialElement = document.getElementById('yearly-potential-text');
+      if (potentialElement) {
+        potentialElement.textContent = `🚀 Du kannst noch ${potentialData.remaining} Dicke erreichen!`;
+        potentialElement.style.display = 'block';
+      }
+    } catch (error) {
+      console.log('Yearly potential not available:', error);
+      const potentialElement = document.getElementById('yearly-potential-text');
+      if (potentialElement) {
+        potentialElement.style.display = 'none';
+      }
+    }
+  } else {
+    // Hide yearly potential for non-logged users
+    const potentialElement = document.getElementById('yearly-potential-text');
+    if (potentialElement) {
+      potentialElement.style.display = 'none';
+    }
+  }
+  
   // Load alltime leaderboard
   const usersResponse = await fetch(`${API_BASE}/users`);
   const users = await usersResponse.json();
@@ -913,7 +938,7 @@ async function loadCalendar(userId) {
   const monthNames = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   document.getElementById('current-month').textContent = 
-    `${monthNames[currentCalendarDate.getMonth()]} ${currentCalendarDate.getFullYear()} - ${userName}`;
+    `${monthNames[currentCalendarDate.getMonth()]} ${currentCalendarDate.getFullYear()}`;
   
   // Add user selector if not already present
   if (!document.getElementById('calendar-user-selector')) {
@@ -922,7 +947,7 @@ async function loadCalendar(userId) {
     selectorContainer.style.margin = '10px 0';
     
     const label = document.createElement('label');
-    label.textContent = 'Kalender anzeigen für: ';
+    label.textContent = 'Kalender von: ';
     label.style.marginRight = '10px';
     label.style.fontWeight = 'bold';
     

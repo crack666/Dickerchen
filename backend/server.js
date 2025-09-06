@@ -6,12 +6,37 @@ const { Pool } = require('pg');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
+const NotificationManager = require('./notification-manager');
 
 const app = express();
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
 const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Initialize notification manager
+const notificationManager = new NotificationManager();
+
+// Fallback notification timer (runs every 2 hours when server is active)
+setInterval(async () => {
+  try {
+    // Only run if it's a reasonable time
+    if (notificationManager.isGoodTimeForNotification()) {
+      const currentHour = notificationManager.getCurrentBerlinHour();
+
+      let timeSlot = 'afternoon'; // default
+      if (currentHour >= 9 && currentHour <= 12) timeSlot = 'morning';
+      else if (currentHour >= 17 && currentHour <= 19) timeSlot = 'evening';
+
+      console.log(`⏰ Fallback notification check - Time slot: ${timeSlot}`);
+
+      // Only send if we haven't sent recently (basic rate limiting)
+      await notificationManager.sendDailyReminders(timeSlot);
+    }
+  } catch (error) {
+    console.log('Fallback notification check failed (non-critical):', error.message);
+  }
+}, 2 * 60 * 60 * 1000); // Every 2 hours
 
 // Helper function for consistent timezone handling
 function getBerlinDateString(date = new Date()) {
@@ -377,6 +402,49 @@ app.get('/api/pushups/:userId/total', async (req, res) => {
   }
 });
 
+app.get('/api/pushups/:userId/yearly-potential', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    // Get the date of the first pushup for this user
+    const firstPushupResult = await pool.query(`
+      SELECT MIN(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as first_date
+      FROM pushups 
+      WHERE user_id = $1
+    `, [userId]);
+
+    if (!firstPushupResult.rows[0].first_date) {
+      // User has no pushups yet
+      return res.json({ remaining: 0, message: 'Noch keine Push-ups erfasst' });
+    }
+
+    const firstPushupDate = new Date(firstPushupResult.rows[0].first_date);
+    const today = new Date();
+    const todayBerlin = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
+
+    // Calculate days since first pushup
+    const daysSinceFirst = Math.floor((todayBerlin - firstPushupDate) / (1000 * 60 * 60 * 24)) + 1; // +1 to include today
+
+    // Get total pushups made by user
+    const totalResult = await pool.query('SELECT SUM(count) as total FROM pushups WHERE user_id = $1', [userId]);
+    const actualTotal = totalResult.rows[0].total || 0;
+
+    // Calculate theoretical maximum for the year
+    const yearlyPotential = 365 * 100; // Always 36,500 for the full year
+    
+    const remaining = yearlyPotential;
+
+    res.json({
+      remaining: remaining,
+      daysSinceFirst: daysSinceFirst,
+      yearlyPotential: yearlyPotential,
+      actualTotal: actualTotal
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/pushups/:userId/calendar', async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
@@ -610,11 +678,122 @@ global.debugLogs = [];
 
 // Simple test endpoint
 app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'API is working!', 
+  res.json({
+    message: 'API is working!',
     timestamp: new Date().toISOString(),
-    publicPath: publicPath 
+    publicPath: publicPath
   });
+});
+
+// Daily notifications endpoint (for GitHub Actions)
+app.post('/api/send-daily-notifications', async (req, res) => {
+  try {
+    // Simple authentication with secret
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const token = authHeader.substring(7);
+    if (token !== process.env.NOTIFICATION_SECRET) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    console.log('🔔 Starting daily notification process...');
+    await notificationManager.sendDailyReminders();
+
+    res.json({ success: true, message: 'Daily notifications sent' });
+  } catch (error) {
+    console.error('Error sending daily notifications:', error);
+    res.status(500).json({ error: 'Failed to send notifications' });
+  }
+});
+
+// Time-slot specific notifications endpoint
+app.post('/api/send-notifications/:timeSlot', async (req, res) => {
+  try {
+    // Simple authentication with secret
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const token = authHeader.substring(7);
+    if (token !== process.env.NOTIFICATION_SECRET) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const timeSlot = req.params.timeSlot;
+    const validSlots = ['morning', 'afternoon', 'evening'];
+
+    if (!validSlots.includes(timeSlot)) {
+      return res.status(400).json({ error: 'Invalid time slot' });
+    }
+
+    console.log(`🔔 Starting ${timeSlot} notification process...`);
+    await notificationManager.sendDailyReminders(timeSlot);
+
+    res.json({ success: true, message: `${timeSlot} notifications sent` });
+  } catch (error) {
+    console.error(`Error sending ${req.params.timeSlot} notifications:`, error);
+    res.status(500).json({ error: 'Failed to send notifications' });
+  }
+});
+
+// Test notifications endpoint (for development)
+app.post('/api/test-notifications', async (req, res) => {
+  try {
+    console.log('🔔 Testing notification system...');
+    await notificationManager.sendDailyReminders();
+    res.json({ success: true, message: 'Test notifications sent' });
+  } catch (error) {
+    console.error('Error testing notifications:', error);
+    res.status(500).json({ error: 'Failed to test notifications' });
+  }
+});
+
+// Test specific time slot notifications
+app.post('/api/test-notifications/:timeSlot', async (req, res) => {
+  try {
+    const timeSlot = req.params.timeSlot;
+    const validSlots = ['morning', 'afternoon', 'evening'];
+
+    if (!validSlots.includes(timeSlot)) {
+      return res.status(400).json({ error: 'Invalid time slot' });
+    }
+
+    console.log(`🔔 Testing ${timeSlot} notification system...`);
+    await notificationManager.sendDailyReminders(timeSlot);
+    res.json({ success: true, message: `Test ${timeSlot} notifications sent` });
+  } catch (error) {
+    console.error(`Error testing ${req.params.timeSlot} notifications:`, error);
+    res.status(500).json({ error: 'Failed to test notifications' });
+  }
+});
+
+// Test fallback notification system
+app.post('/api/trigger-fallback', async (req, res) => {
+  try {
+    console.log('⏰ Testing fallback notification system...');
+
+    // Only run if it's a reasonable time
+    if (notificationManager.isGoodTimeForNotification()) {
+      const currentHour = notificationManager.getCurrentBerlinHour();
+
+      let timeSlot = 'afternoon'; // default
+      if (currentHour >= 9 && currentHour <= 12) timeSlot = 'morning';
+      else if (currentHour >= 17 && currentHour <= 19) timeSlot = 'evening';
+
+      console.log(`⏰ Fallback test - Time slot: ${timeSlot}`);
+      await notificationManager.sendDailyReminders(timeSlot);
+      res.json({ success: true, message: `Fallback test completed for ${timeSlot} slot` });
+    } else {
+      res.json({ success: true, message: 'Fallback test skipped - not a good time for notifications' });
+    }
+  } catch (error) {
+    console.error('Error testing fallback notifications:', error);
+    res.status(500).json({ error: 'Failed to test fallback notifications' });
+  }
 });
 
 // HTTP Server
