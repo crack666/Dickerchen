@@ -6,6 +6,8 @@ Eine Progressive Web App für Push-up Challenges mit sozialen Features, intellig
 
 **🌐 Live:** https://dickerchen.fly.dev
 
+**📊 Status:** ✅ **Notification-System aktiv** - Hybride Zustellung funktioniert
+
 ---
 
 ## ✨ Features
@@ -72,7 +74,28 @@ Eine Progressive Web App für Push-up Challenges mit sozialen Features, intellig
 
 ---
 
-## 🚀 Installation & Development
+## � **System Status**
+
+### ✅ **Notification-System aktiv**
+- **GitHub Actions:** Läuft alle 2 Stunden (9:00, 11:00, 13:00, 15:00, 17:00, 19:00 Berlin-Zeit)
+- **Server Fallback:** Aktiv alle 2 Stunden bei Server-Aktivität
+- **Smart Features:** User-Kategorisierung, Rate Limiting, zufällige Zeiten
+- **Letzter Test:** 6. September 2025 - Erfolgreich ✅
+- **Workflow ID:** 186967262
+
+### 🔧 **Konfiguration**
+- **NOTIFICATION_SECRET:** Gesetzt bei Fly.io und GitHub
+- **API-Endpunkte:** `/api/send-notifications/:timeSlot`, `/api/test-notifications/:timeSlot`
+- **Zeit-Slots:** Morgen (9-12), Nachmittag (13-16), Abend (17-19)
+
+### 📈 **Monitoring**
+- **GitHub Actions Logs:** Verfolge Notification-Versand
+- **Server Logs:** Zeigen erfolgreiche Zustellungen
+- **Test-Endpunkte:** Für manuelle Tests verfügbar
+
+---
+
+## �🚀 Installation & Development
 
 ### **Lokale Entwicklung**
 
