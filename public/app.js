@@ -787,7 +787,7 @@ async function loadAlltimeStats() {
       const potentialData = await potentialResponse.json();
       const potentialElement = document.getElementById('yearly-potential-text');
       if (potentialElement) {
-        potentialElement.textContent = `🚀 Du kannst noch ${potentialData.remaining} Dicke erreichen!`;
+        potentialElement.textContent = `🚀 Du kannst ${potentialData.yearlyPotential} Dicke erreichen!`;
         potentialElement.style.display = 'block';
       }
     } catch (error) {
