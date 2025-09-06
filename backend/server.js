@@ -13,6 +13,15 @@ const PORT = process.env.PORT || 3001;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Helper function for consistent timezone handling
+function getBerlinDateString(date = new Date()) {
+  // Convert to Berlin timezone and return YYYY-MM-DD format
+  const berlinDate = new Date(date.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
+  return berlinDate.getFullYear() + '-' + 
+         String(berlinDate.getMonth() + 1).padStart(2, '0') + '-' + 
+         String(berlinDate.getDate()).padStart(2, '0');
+}
+
 // PostgreSQL connection - Environment-based
 const pool = new Pool(
   process.env.DATABASE_URL ? {
@@ -179,29 +188,27 @@ app.get('/api/users', async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const dailyGoal = 100;
-    // Use Berlin timezone to match other APIs
-    const today = new Date();
-    const berlinToday = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
-    const todayStr = berlinToday.getFullYear() + '-' + 
-                    String(berlinToday.getMonth() + 1).padStart(2, '0') + '-' + 
-                    String(berlinToday.getDate()).padStart(2, '0');
-    
+    // Use consistent Berlin timezone helper
+    const todayStr = getBerlinDateString();
+
+    console.log(`🏆 Getting leaderboard for Berlin date: ${todayStr}`);
+
     // Get all users
     const usersResult = await pool.query('SELECT * FROM users');
     const users = usersResult.rows;
-    
+
     // Calculate leaderboard data for each user
     const leaderboardData = await Promise.all(users.map(async (user) => {
       // Get today's pushups for this user, ordered by timestamp (Berlin timezone)
       const pushupsResult = await pool.query(
-        'SELECT count, timestamp FROM pushups WHERE user_id = $1 AND to_char((timestamp AT TIME ZONE \'Europe/Berlin\'), \'YYYY-MM-DD\') = $2 ORDER BY timestamp ASC',
+        'SELECT count, (timestamp AT TIME ZONE \'UTC\' AT TIME ZONE \'Europe/Berlin\') as timestamp FROM pushups WHERE user_id = $1 AND to_char((timestamp AT TIME ZONE \'UTC\' AT TIME ZONE \'Europe/Berlin\'), \'YYYY-MM-DD\') = $2 ORDER BY timestamp ASC',
         [user.id, todayStr]
       );
-      
+
       const pushups = pushupsResult.rows;
       let total = 0;
       let goalReachedAt = null;
-      
+
       // Calculate running total and find when goal was reached
       for (const pushup of pushups) {
         total += pushup.count;
@@ -305,21 +312,57 @@ app.delete('/api/pushups/:pushupId', async (req, res) => {
 
 app.get('/api/pushups/:userId', async (req, res) => {
   try {
-    // Get today's date in Berlin timezone to match calendar
-    const today = new Date();
-    const berlinToday = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
-    const todayStr = berlinToday.getFullYear() + '-' + 
-                    String(berlinToday.getMonth() + 1).padStart(2, '0') + '-' + 
-                    String(berlinToday.getDate()).padStart(2, '0');
-    
+    // Get today's date in Berlin timezone using consistent helper function
+    const todayStr = getBerlinDateString();
+
+    console.log(`🕐 Getting pushups for user ${req.params.userId} on Berlin date: ${todayStr}`);
+
     const result = await pool.query(`
-      SELECT * FROM pushups 
-      WHERE user_id = $1 
-      AND to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
+      SELECT 
+        id,
+        user_id,
+        count,
+        (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as timestamp
+      FROM pushups
+      WHERE user_id = $1
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
+      ORDER BY timestamp ASC
     `, [req.params.userId, todayStr]);
-    
+
+    console.log(`📊 Found ${result.rows.length} pushups for user ${req.params.userId} on ${todayStr}`);
+
     const total = result.rows.reduce((sum, p) => sum + p.count, 0);
     res.json({ total, pushups: result.rows });
+  } catch (err) {
+    console.error('❌ Error in GET /api/pushups/:userId:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get pushups for a specific date (YYYY-MM-DD format)
+app.get('/api/pushups/:userId/date/:date', async (req, res) => {
+  try {
+    const { userId, date } = req.params;
+    
+    // Validate date format (YYYY-MM-DD)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        id,
+        user_id,
+        count,
+        (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as timestamp
+      FROM pushups 
+      WHERE user_id = $1 
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
+      ORDER BY timestamp ASC
+    `, [userId, date]);
+    
+    const total = result.rows.reduce((sum, p) => sum + p.count, 0);
+    res.json({ total, pushups: result.rows, date });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -345,11 +388,13 @@ app.get('/api/pushups/:userId/calendar', async (req, res) => {
     const endDate = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
     
     const result = await pool.query(`
-      SELECT DATE(timestamp) as date, SUM(count) as total
+      SELECT to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, SUM(count) as total
       FROM pushups 
-      WHERE user_id = $1 AND DATE(timestamp) >= $2 AND DATE(timestamp) <= $3
-      GROUP BY DATE(timestamp)
-      ORDER BY DATE(timestamp)
+      WHERE user_id = $1 
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
+      GROUP BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      ORDER BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
     `, [req.params.userId, startDate, endDate]);
     
     res.json(result.rows);
@@ -370,14 +415,14 @@ app.get('/api/calendar/:userId/:year/:month', async (req, res) => {
     
     const result = await pool.query(`
       SELECT 
-        to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, 
+        to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, 
         SUM(count) as total
       FROM pushups 
       WHERE user_id = $1 
-      AND to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
-      AND to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
-      GROUP BY to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
-      ORDER BY to_char((timestamp AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
+      GROUP BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      ORDER BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
     `, [userId, startDate, endDate]);
     
     res.json(result.rows);

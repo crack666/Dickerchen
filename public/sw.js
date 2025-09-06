@@ -1,7 +1,7 @@
 // Dickerchen Service Worker
 // Supports: offline core assets, push notifications, dev-friendly behaviour
 
-const VERSION = 'v5'; // bump to force update - Slider & Login Button Fix
+const VERSION = 'v8'; // bump to force update - Berlin timezone fixes
 const DEV = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
 const CORE_CACHE = `dickerchen-core-${VERSION}`;
 const RUNTIME_CACHE = `dickerchen-runtime-${VERSION}`;

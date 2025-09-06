@@ -30,8 +30,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auto-refresh setup
   setupAutoRefresh();
 
+  // Debug: Check if add buttons exist
+  const addButtons = document.querySelectorAll('.add-btn');
+  console.log(`🔍 Found ${addButtons.length} add buttons:`, addButtons);
+  
+  addButtons.forEach((btn, index) => {
+    console.log(`Button ${index + 1}:`, btn, 'data-count:', btn.dataset.count);
+  });
+
   document.querySelectorAll('.add-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      console.log('🔥 Add button clicked!', btn.dataset.count, 'Button element:', btn); // Debug log
+      console.log('🔥 Event object:', e);
+      console.log('🔥 Current userId:', userId);
+      
       if (!userId) {
         alert('Bitte gib erst deinen Namen ein!');
         return;
@@ -44,6 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         });
       }
+      console.log('🚀 Adding pushups:', parseInt(btn.dataset.count)); // Debug log
       addPushup(parseInt(btn.dataset.count));
     });
   });
@@ -59,13 +72,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Initialize slider with current progress - make this globally accessible
   window.initializeSlider = function() {
+    // Prevent multiple simultaneous initializations
+    if (window.isInitializingSlider) {
+      console.log('⏸️ Slider initialization already in progress, skipping...');
+      return;
+    }
+    
+    window.isInitializingSlider = true;
+    
     // Get the MOST current value to avoid race conditions
     currentPushups = getCurrentPushups();
-    console.log(`Initializing slider: currentPushups = ${currentPushups}`);
+    console.log(`🎯 Initializing slider: currentPushups = ${currentPushups}`);
     
     // Double-check we have valid data before proceeding
     if (currentPushups === undefined || currentPushups === null || isNaN(currentPushups)) {
-      console.warn('currentPushups is invalid, delaying initialization');
+      console.warn('⚠️ currentPushups is invalid, delaying initialization');
+      window.isInitializingSlider = false;
       setTimeout(() => window.initializeSlider(), 100);
       return;
     }
@@ -81,7 +103,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Force update to ensure everything is in sync
     updateSliderDisplay();
     
-    console.log(`Slider initialized: min=${progressSlider.min}, max=${progressSlider.max}, value=${progressSlider.value}`);
+    // Clear the initialization flag
+    window.isInitializingSlider = false;
+    
+    console.log(`✅ Slider initialized: min=${progressSlider.min}, max=${progressSlider.max}, value=${progressSlider.value}`);
   };
   
   // Update both progress fill and slider position
@@ -433,8 +458,12 @@ async function loadProgress() {
     return;
   }
   
+  console.log('🔄 loadProgress called for userId:', userId);
+  
   const response = await fetch(`${API_BASE}/pushups/${userId}`);
   const data = await response.json();
+  
+  console.log('📊 loadProgress received data:', data);
   
   // Store current total for slider functionality - CRITICAL: Do this FIRST
   window.currentPushups = data.total;
@@ -443,13 +472,13 @@ async function loadProgress() {
   
   // Initialize slider AFTER we have the correct currentPushups value
   // Use setTimeout to ensure DOM is ready and values are set
-  setTimeout(() => {
-    if (typeof window.initializeSlider === 'function') {
-      window.initializeSlider();
-    } else {
-      console.error('initializeSlider function not found!');
-    }
-  }, 50);
+  // Only initialize if not already initialized to prevent multiple calls
+  if (typeof window.initializeSlider === 'function') {
+    console.log('🎯 Calling initializeSlider with currentPushups:', window.currentPushups);
+    window.initializeSlider();
+  } else {
+    console.error('initializeSlider function not found!');
+  }
   
   // Show share button if user has made progress
   const shareBtn = document.getElementById('share-progress');
@@ -517,21 +546,44 @@ function shareProgress(total) {
 }
 
 async function addPushup(count = 1) {
-  const response = await fetch(`${API_BASE}/pushups`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, count })
-  });
+  console.log(`🚀 addPushup called with count: ${count}, userId: ${userId}`);
   
-  if (response.ok) {
-    loadProgress();
-    loadLeaderboard();
-  } else {
-    console.error('Failed to add pushups');
-    // Reset slider on error
-    if (typeof resetSlider === 'function') {
-      resetSlider();
+  // Prevent multiple simultaneous requests
+  if (window.isAddingPushup) {
+    console.log('⏸️ AddPushup already in progress, ignoring request');
+    return;
+  }
+  
+  window.isAddingPushup = true;
+  
+  try {
+    const response = await fetch(`${API_BASE}/pushups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, count })
+    });
+    
+    console.log(`📡 addPushup response status: ${response.status}`);
+    
+    if (response.ok) {
+      console.log('✅ addPushup successful, reloading data...');
+      
+      // Update data in sequence to avoid race conditions
+      await loadProgress();
+      await loadLeaderboard();
+      
+      console.log('🔄 Data refresh completed');
+    } else {
+      console.error('❌ Failed to add pushups, response:', response);
+      // Reset slider on error
+      if (typeof resetSlider === 'function') {
+        resetSlider();
+      }
     }
+  } catch (error) {
+    console.error('❌ addPushup error:', error);
+  } finally {
+    window.isAddingPushup = false;
   }
 }
 
@@ -629,8 +681,10 @@ function renderLeaderboard(userProgress) {
     
     let timeInfo = '';
     if (user.hasReachedGoal && user.goalReachedAt) {
-      const goalTime = new Date(user.goalReachedAt);
-      timeInfo = ` (um ${goalTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'})})`;
+      // Extract time directly from Berlin timestamp
+      const timestamp = user.goalReachedAt;
+      const timePart = timestamp.substring(11, 16);
+      timeInfo = ` (um ${timePart})`;
     }
     
     li.innerHTML = `
@@ -705,7 +759,9 @@ async function openUserModal(user) {
   
   data.pushups.forEach(pushup => {
     const li = document.createElement('li');
-    const time = new Date(pushup.timestamp).toLocaleTimeString();
+    // Extract time directly from Berlin timestamp
+    const timestamp = pushup.timestamp;
+    const timePart = timestamp.substring(11, 16);
     
     // Check if this is the current user's own profile
     const isOwnProfile = userId && user.id == userId;
@@ -714,7 +770,7 @@ async function openUserModal(user) {
       // User can delete their own entries
       li.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0;">
-          <span>${time}: ${pushup.count} Dicke</span>
+          <span>${timePart}: ${pushup.count} Dicke</span>
           <button class="delete-pushup-btn" data-pushup-id="${pushup.id}" style="
             background: #ff4444; 
             color: white; 
@@ -729,7 +785,7 @@ async function openUserModal(user) {
       `;
     } else {
       // Other users' profiles - no delete button
-      li.innerHTML = `<span>${time}: ${pushup.count} Dicke</span>`;
+      li.innerHTML = `<span>${timePart}: ${pushup.count} Dicke</span>`;
     }
     
     logList.appendChild(li);
@@ -919,15 +975,12 @@ async function loadCalendar(userId) {
 async function showDayDetails(dateStr, total, dayData) {
   if (!currentCalendarUserId) return;
   
-  // Get detailed pushup data for this day
-  const detailResponse = await fetch(`${API_BASE}/pushups/${currentCalendarUserId}`);
-  const allPushups = await detailResponse.json();
+  // Get detailed pushup data for this specific date using the new API
+  const detailResponse = await fetch(`${API_BASE}/pushups/${currentCalendarUserId}/date/${dateStr}`);
+  const dayPushupsData = await detailResponse.json();
   
-  // Filter pushups for the specific date
-  const dayPushups = allPushups.pushups ? allPushups.pushups.filter(p => {
-    const pushupDate = new Date(p.timestamp).toISOString().split('T')[0];
-    return pushupDate === dateStr;
-  }) : [];
+  // Use the pushups from the specific date API
+  const dayPushups = dayPushupsData.pushups || [];
   
   // Get user name
   const userResponse = await fetch(`${API_BASE}/users`);
@@ -943,15 +996,18 @@ async function showDayDetails(dateStr, total, dayData) {
     day: 'numeric'
   });
   
+  // Use the total from the specific date API instead of the calendar data
+  const actualTotal = dayPushupsData.total || 0;
+  
   // Show in modal
   document.getElementById('modal-name').textContent = `${userName} - ${displayDate}`;
   document.getElementById('modal-progress').innerHTML = `
     <div style="text-align: center; margin: 20px 0;">
-      <div style="font-size: 48px; font-weight: bold; color: ${total >= dailyGoal ? '#4CAF50' : total > 0 ? '#FF9800' : '#FF5722'};">
-        ${total}
+      <div style="font-size: 48px; font-weight: bold; color: ${actualTotal >= dailyGoal ? '#4CAF50' : actualTotal > 0 ? '#FF9800' : '#FF5722'};">
+        ${actualTotal}
       </div>
       <div style="color: #666; margin-top: 10px;">
-        ${total >= dailyGoal ? '🎉 Ziel erreicht!' : total > 0 ? '⚠️ Teilweise erfüllt' : '❌ Kein Training'}
+        ${actualTotal >= dailyGoal ? '🎉 Ziel erreicht!' : actualTotal > 0 ? '⚠️ Teilweise erfüllt' : '❌ Kein Training'}
       </div>
     </div>
   `;
@@ -963,8 +1019,10 @@ async function showDayDetails(dateStr, total, dayData) {
     logList.innerHTML = '<p style="color: #666; font-style: italic;">Keine Push-ups an diesem Tag</p>';
   } else {
     logList.innerHTML = dayPushups.map(p => {
-      const time = new Date(p.timestamp).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
-      return `<p><strong>${p.count}</strong> Push-ups um <strong>${time}</strong></p>`;
+      // Extract time directly from Berlin timestamp (already converted by backend)
+      const timestamp = p.timestamp; // Format: "2025-09-05T22:36:11.534Z"
+      const timePart = timestamp.substring(11, 16); // Extract "22:36"
+      return `<p><strong>${p.count}</strong> Push-ups um <strong>${timePart}</strong></p>`;
     }).join('');
   }
   
