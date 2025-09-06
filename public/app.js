@@ -787,7 +787,16 @@ async function loadAlltimeStats() {
       const potentialData = await potentialResponse.json();
       const potentialElement = document.getElementById('yearly-potential-text');
       if (potentialElement) {
-        potentialElement.textContent = `🚀 Du kannst ${potentialData.yearlyPotential} Dicke erreichen!`;
+        const remainingDays = 365 - potentialData.daysSinceFirst;
+        const deficitText = potentialData.deficit > 0 ? ` - <span style="color: #e74c3c; font-weight: bold;">${potentialData.deficit}</span>` : '';
+        
+        potentialElement.innerHTML = `
+          🚀 <span style="color: #27ae60; font-weight: bold;">36500</span>${deficitText} = 
+          <span style="color: #3498db; font-weight: bold;">${potentialData.yearlyPotential}</span> Dicke möglich!<br>
+          <small style="color: #7f8c8d; font-size: 0.8em;">
+            Nur noch ${remainingDays} Tage und ${potentialData.remaining} Dicke!
+          </small>
+        `;
         potentialElement.style.display = 'block';
       }
     } catch (error) {
@@ -1211,6 +1220,9 @@ async function cleanupOldSubscriptions() {
     console.log('⚠️ Cleanup failed, but continuing:', error.message);
   }
 }
+
+// Push notification subscription function
+async function subscribeToPushNotifications() {
   try {
     console.log('Starting push notification subscription...');
     
