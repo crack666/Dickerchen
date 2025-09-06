@@ -476,12 +476,19 @@ async function createOrLoginUser(name) {
   // Update login button
   document.getElementById('login-btn').textContent = `${userName}`;
   
+  // Clean up old push subscriptions before subscribing new user
+  await cleanupOldSubscriptions();
+  
   // Request notification permission and subscribe after login
   if ('Notification' in window) {
     if (Notification.permission === 'granted') {
       // Permission already granted, subscribe immediately
       console.log('📢 Notification permission already granted, subscribing...');
-      subscribeUser();
+      if (userId) {
+        subscribeUser();
+      } else {
+        console.log('⚠️ No userId available, skipping subscription');
+      }
     } else if (Notification.permission === 'default') {
       // Ask for permission first
       console.log('📢 Requesting notification permission...');
@@ -1184,7 +1191,26 @@ async function nudgeUser(user) {
 }
 
 // Push Notification functions
-async function subscribeUser() {
+async function cleanupOldSubscriptions() {
+  try {
+    console.log('🧹 Cleaning up old push subscriptions...');
+    
+    // Delete old subscriptions from server (server will only keep current user's subscription)
+    const response = await fetch(`${API_BASE}/cleanup-subscriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentUserId: userId })
+    });
+    
+    if (response.ok) {
+      console.log('✅ Old subscriptions cleaned up');
+    } else {
+      console.log('⚠️ Cleanup may have failed, but continuing...');
+    }
+  } catch (error) {
+    console.log('⚠️ Cleanup failed, but continuing:', error.message);
+  }
+}
   try {
     console.log('Starting push notification subscription...');
     

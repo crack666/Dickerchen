@@ -570,6 +570,28 @@ app.post('/api/subscribe', async (req, res) => {
   }
 });
 
+// Cleanup old subscriptions endpoint
+app.post('/api/cleanup-subscriptions', async (req, res) => {
+  try {
+    const { currentUserId } = req.body;
+    
+    console.log('🧹 Cleaning up old subscriptions for user:', currentUserId);
+    
+    // Delete all subscriptions that are NOT for the current user
+    // This ensures only the current user's subscription remains
+    const result = await pool.query(`
+      DELETE FROM push_subscriptions 
+      WHERE user_id != $1
+    `, [currentUserId]);
+    
+    console.log(`✅ Cleaned up ${result.rowCount} old subscriptions`);
+    res.json({ success: true, cleaned: result.rowCount });
+  } catch (error) {
+    console.error('❌ Error cleaning up subscriptions:', error);
+    res.status(500).json({ error: 'Failed to cleanup subscriptions' });
+  }
+});
+
 // Send notification endpoint - load from database
 app.post('/api/send-notification', async (req, res) => {
   try {
