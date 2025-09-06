@@ -429,16 +429,24 @@ app.get('/api/pushups/:userId/yearly-potential', async (req, res) => {
     const totalResult = await pool.query('SELECT SUM(count) as total FROM pushups WHERE user_id = $1', [userId]);
     const actualTotal = totalResult.rows[0].total || 0;
 
-    // Calculate theoretical maximum for the year
-    const yearlyPotential = 365 * 100; // Always 36,500 for the full year
+    // Calculate theoretical maximum for days since first pushup
+    const theoreticalMaximum = daysSinceFirst * 100;
     
-    const remaining = yearlyPotential;
+    // Calculate deficit (what user should have done vs. what they actually did)
+    const deficit = theoreticalMaximum - actualTotal;
+    
+    // Calculate yearly potential: 365 days * 100 - deficit
+    const yearlyPotential = (365 * 100) - deficit;
+    
+    const remaining = yearlyPotential - actualTotal;
 
     res.json({
       remaining: remaining,
       daysSinceFirst: daysSinceFirst,
       yearlyPotential: yearlyPotential,
-      actualTotal: actualTotal
+      actualTotal: actualTotal,
+      theoreticalMaximum: theoreticalMaximum,
+      deficit: deficit
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
