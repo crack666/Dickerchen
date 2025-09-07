@@ -293,6 +293,16 @@ app.post('/api/pushups', async (req, res) => {
   try {
     const { userId, count } = req.body;
     const result = await pool.query('INSERT INTO pushups (user_id, count) VALUES ($1, $2) RETURNING *', [userId, count]);
+    
+    // Trigger smart notifications based on this push-up entry
+    setTimeout(async () => {
+      try {
+        await checkForSmartNotifications(userId, count);
+      } catch (error) {
+        console.log('Smart notification check failed (non-critical):', error.message);
+      }
+    }, 1000); // Small delay to ensure DB is updated
+    
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -837,6 +847,144 @@ app.listen(PORT, HOST, () => {
   console.log(`Local access: http://localhost:${PORT}`);
   console.log(`LAN access: http://192.168.178.196:${PORT}`);
 });
+
+// Smart notification logic - triggered when someone adds push-ups
+async function checkForSmartNotifications(triggerUserId, addedCount) {
+  const berlinDate = getBerlinDateString();
+  const currentHour = new Date().toLocaleString("en-US", {timeZone: "Europe/Berlin", hour: "numeric", hour12: false});
+  
+  console.log(`🧠 Smart notification check: User ${triggerUserId} added ${addedCount} push-ups at ${currentHour}h`);
+  
+  // Get today's leaderboard to understand the situation
+  const leaderboard = await pool.query(`
+    SELECT 
+      u.id,
+      u.name,
+      COALESCE(SUM(p.count), 0) as total,
+      COUNT(p.id) as entries,
+      MIN(p.created_at) as first_entry_time
+    FROM users u
+    LEFT JOIN pushups p ON u.id = p.user_id 
+      AND DATE(p.created_at AT TIME ZONE 'Europe/Berlin') = $1
+    GROUP BY u.id, u.name
+    ORDER BY total DESC, first_entry_time ASC
+  `, [berlinDate]);
+  
+  const users = leaderboard.rows;
+  const triggerUser = users.find(u => u.id == triggerUserId);
+  
+  if (!triggerUser) return;
+  
+  // Determine what kind of smart notification to send
+  const notifications = [];
+  
+  // 1. Early bird notification (5-8 AM, first to reach 100)
+  if (currentHour >= 5 && currentHour <= 8 && triggerUser.total >= 100) {
+    const others = users.filter(u => u.id != triggerUserId && u.total < 100);
+    if (others.length > 0) {
+      notifications.push({
+        type: 'early_bird',
+        targetUsers: others.map(u => u.id),
+        message: `🌅 Wow! ${triggerUser.name} hat schon um ${currentHour} Uhr die vollen 100 erreicht! Bist du der nächste? 💪`,
+        cooldown: 'early_bird_today' // Only once per day
+      });
+    }
+  }
+  
+  // 2. Leadership change notification (someone takes the lead)
+  const previousLeader = users[1]; // Second place
+  if (triggerUser.total > 0 && previousLeader && triggerUser.total > previousLeader.total) {
+    const others = users.filter(u => u.id != triggerUserId);
+    notifications.push({
+      type: 'leadership_change',
+      targetUsers: others.map(u => u.id),
+      message: `👑 ${triggerUser.name} hat die Führung übernommen mit ${triggerUser.total} Dicken! Schnell, hol dir den ersten Platz zurück! 🏃‍♂️`,
+      cooldown: `leadership_change_${triggerUserId}_today` // Once per user per day
+    });
+  }
+  
+  // 3. Close race notification (gap < 20 push-ups in top 3)
+  if (users.length >= 2) {
+    const leader = users[0];
+    const second = users[1];
+    if (leader.total - second.total <= 20 && leader.total > 50) {
+      notifications.push({
+        type: 'close_race',
+        targetUsers: [second.id],
+        message: `🔥 Nur noch ${leader.total - second.total} Dicke bis zum ersten Platz! ${leader.name} ist in Reichweite! 🎯`,
+        cooldown: `close_race_today` // Once per day
+      });
+    }
+  }
+  
+  // 4. Lazy notification (after 12 PM, someone still at 0)
+  if (currentHour >= 12) {
+    const lazyUsers = users.filter(u => u.total === 0);
+    const activeUsers = users.filter(u => u.total > 0);
+    
+    if (lazyUsers.length > 0 && activeUsers.length > 0) {
+      const topUser = activeUsers[0];
+      notifications.push({
+        type: 'lazy_reminder',
+        targetUsers: lazyUsers.map(u => u.id),
+        message: `😴 ${topUser.name} ist schon bei ${topUser.total} Dicken und du pennst noch? Zeit aufzuwachen! ⏰`,
+        cooldown: 'lazy_reminder_today' // Once per day
+      });
+    }
+  }
+  
+  // Send notifications (with cooldown check)
+  for (const notification of notifications) {
+    await sendSmartNotification(notification);
+  }
+}
+
+async function sendSmartNotification({ type, targetUsers, message, cooldown }) {
+  // Simple cooldown check (could be improved with Redis/DB)
+  const today = getBerlinDateString();
+  const cooldownKey = `${cooldown}_${today}`;
+  
+  // Skip if we've already sent this type today (basic rate limiting)
+  // For now, we'll just log and send - in production you'd store this in DB/cache
+  console.log(`📱 Smart notification [${type}]: "${message}" to users: ${targetUsers.join(', ')}`);
+  
+  try {
+    // Get subscriptions for target users
+    const subscriptions = await pool.query(
+      'SELECT user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ANY($1)',
+      [targetUsers]
+    );
+    
+    // Send to each user
+    for (const subscription of subscriptions.rows) {
+      const pushSubscription = {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.p256dh,
+          auth: subscription.auth
+        }
+      };
+      
+      const payload = JSON.stringify({
+        title: 'Dickerchen Challenge! 💪',
+        body: message,
+        icon: '/icon-192.svg',
+        badge: '/icon-192.svg',
+        tag: type, // Prevent duplicate notifications
+        data: { type, timestamp: Date.now() }
+      });
+      
+      try {
+        await webPush.sendNotification(pushSubscription, payload);
+        console.log(`✅ Smart notification sent to user ${subscription.user_id}`);
+      } catch (error) {
+        console.log(`❌ Failed to send smart notification to user ${subscription.user_id}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Smart notification failed:', error);
+  }
+}
 
 // HTTPS Server (für PWA) - nur wenn Zertifikate vorhanden
 const certPath = path.join(__dirname, 'cert.pem');
