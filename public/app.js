@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().then(permission => {
           if (permission === 'granted') {
-            subscribeUser();
+            subscribeToPushNotifications();
           }
         });
       }
@@ -418,7 +418,7 @@ async function initializeUser() {
   if (userId && 'Notification' in window && Notification.permission === 'granted') {
     console.log('🔄 User already logged in with notification permission, subscribing...');
     try {
-      await subscribeUser();
+      await subscribeToPushNotifications();
     } catch (error) {
       console.log('⚠️ Auto-subscription failed (probably already subscribed):', error.message);
     }
@@ -485,7 +485,7 @@ async function createOrLoginUser(name) {
       // Permission already granted, subscribe immediately
       console.log('📢 Notification permission already granted, subscribing...');
       if (userId) {
-        subscribeUser();
+        subscribeToPushNotifications();
       } else {
         console.log('⚠️ No userId available, skipping subscription');
       }
@@ -495,7 +495,7 @@ async function createOrLoginUser(name) {
       Notification.requestPermission().then(permission => {
         if (permission === 'granted') {
           console.log('📢 Notification permission granted, subscribing...');
-          subscribeUser();
+          subscribeToPushNotifications();
         } else {
           console.log('❌ Notification permission denied');
         }
@@ -1339,7 +1339,7 @@ document.getElementById('test-notifications-btn').onclick = async () => {
       
       if (permission === 'granted') {
         // Try to subscribe
-        await subscribeUser();
+        await subscribeToPushNotifications();
         
         // Show updated debug info
         setTimeout(showDebugInfo, 1000);

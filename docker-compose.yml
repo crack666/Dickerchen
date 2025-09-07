@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Shared PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: dickerchen
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: dickerchen_main
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # App 1 (z.B. pushup-challenge.com)
+  app1:
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://dickerchen:${DB_PASSWORD}@postgres:5432/app1_db
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # App 2 (z.B. fitness-tracker.com)
+  app2:
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://dickerchen:${DB_PASSWORD}@postgres:5432/app2_db
+      PORT: 3002
+    ports:
+      - "3002:3002"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # App 3 (z.B. workout-planner.com)
+  app3:
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://dickerchen:${DB_PASSWORD}@postgres:5432/app3_db
+      PORT: 3003
+    ports:
+      - "3003:3003"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
