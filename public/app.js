@@ -15,6 +15,7 @@ fetch(API_BASE + '/test')
 
 let userId = localStorage.getItem('userId') || null;
 let userName = localStorage.getItem('userName') || null;
+let previousUserId = null; // Track previous user for cleanup decisions
 let dailyGoal = 100;
 
 // Emoji celebration function - defined globally
@@ -476,8 +477,17 @@ async function createOrLoginUser(name) {
   // Update login button
   document.getElementById('login-btn').textContent = `${userName}`;
   
-  // Clean up old push subscriptions before subscribing new user
-  await cleanupOldSubscriptions();
+  // Clean up old push subscriptions ONLY if user actually changed
+  if (previousUserId && previousUserId !== userId) {
+    console.log('🔄 User changed from', previousUserId, 'to', userId, '- cleaning up old subscriptions');
+    await cleanupOldSubscriptions();
+  } else if (!previousUserId) {
+    console.log('🔄 First user login - cleaning up any old subscriptions');
+    await cleanupOldSubscriptions();
+  }
+  
+  // Update previous user tracking
+  previousUserId = userId;
   
   // Request notification permission and subscribe after login
   if ('Notification' in window) {
