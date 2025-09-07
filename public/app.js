@@ -1212,17 +1212,30 @@ async function nudgeUser(user) {
 // Push Notification functions
 async function cleanupOldSubscriptions() {
   try {
-    console.log('🧹 Cleaning up old push subscriptions...');
+    console.log('🧹 Cleaning up old push subscriptions for this device...');
     
-    // Delete old subscriptions from server (server will only keep current user's subscription)
+    // Get the current subscription to identify this device
+    const registration = await navigator.serviceWorker.ready;
+    const existingSubscription = await registration.pushManager.getSubscription();
+    
+    if (!existingSubscription) {
+      console.log('⚠️ No existing subscription found, skipping cleanup');
+      return;
+    }
+    
+    // Delete old subscriptions from server (only for this device endpoint with different user)
     const response = await fetch(`${API_BASE}/cleanup-subscriptions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentUserId: userId })
+      body: JSON.stringify({ 
+        currentUserId: userId, 
+        subscription: existingSubscription 
+      })
     });
     
     if (response.ok) {
-      console.log('✅ Old subscriptions cleaned up');
+      const result = await response.json();
+      console.log('✅ Old subscriptions cleaned up for this device:', result.cleaned);
     } else {
       console.log('⚠️ Cleanup may have failed, but continuing...');
     }

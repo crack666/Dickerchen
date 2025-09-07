@@ -581,18 +581,23 @@ app.post('/api/subscribe', async (req, res) => {
 // Cleanup old subscriptions endpoint
 app.post('/api/cleanup-subscriptions', async (req, res) => {
   try {
-    const { currentUserId } = req.body;
+    const { currentUserId, subscription } = req.body;
     
     console.log('🧹 Cleaning up old subscriptions for user:', currentUserId);
     
-    // Delete all subscriptions that are NOT for the current user
-    // This ensures only the current user's subscription remains
+    // Get the subscription endpoint from the request
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ error: 'Subscription endpoint required' });
+    }
+    
+    // Delete only subscriptions with the SAME endpoint but DIFFERENT user_id
+    // This ensures that on THIS device, only the current user gets notifications
     const result = await pool.query(`
       DELETE FROM push_subscriptions 
-      WHERE user_id != $1
-    `, [currentUserId]);
+      WHERE endpoint = $1 AND user_id != $2
+    `, [subscription.endpoint, currentUserId]);
     
-    console.log(`✅ Cleaned up ${result.rowCount} old subscriptions`);
+    console.log(`✅ Cleaned up ${result.rowCount} old subscriptions for this device`);
     res.json({ success: true, cleaned: result.rowCount });
   } catch (error) {
     console.error('❌ Error cleaning up subscriptions:', error);
