@@ -878,8 +878,8 @@ async function checkForSmartNotifications(triggerUserId, addedCount) {
   // Determine what kind of smart notification to send
   const notifications = [];
   
-  // 1. Early bird notification (5-8 AM, first to reach 100)
-  if (currentHour >= 5 && currentHour <= 8 && triggerUser.total >= 100) {
+  // 1. Early bird notification (5-9 AM, first to reach 100)
+  if (currentHour >= 5 && currentHour <= 9 && triggerUser.total >= 100) {
     const others = users.filter(u => u.id != triggerUserId && u.total < 100);
     if (others.length > 0) {
       notifications.push({

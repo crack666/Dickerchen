@@ -1172,13 +1172,17 @@ async function nudgeUser(user) {
       `Push-up Challenge accepted? ${user.name}, [sender] ist bei [mein total]! Challenge! 🏁`
     ];
     
-    // Get my progress
+    // Get my progress AND the target user's current progress
     const myResponse = await fetch(`${API_BASE}/pushups/${userId}`);
     const myData = await myResponse.json();
     
+    // Get target user's current progress (fresh data for today)
+    const targetResponse = await fetch(`${API_BASE}/pushups/${user.id}`);
+    const targetData = await targetResponse.json();
+    
     let message = nudgeMessages[Math.floor(Math.random() * nudgeMessages.length)];
     message = message.replace('[mein total]', myData.total);
-    message = message.replace('[ziel - dein total]', Math.max(0, dailyGoal - user.total));
+    message = message.replace('[ziel - dein total]', Math.max(0, dailyGoal - targetData.total));
     message = message.replace('[sender]', userName || 'Ein Freund');
     
     console.log('Sending notification to user:', user.id, 'Message:', message);
