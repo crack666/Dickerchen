@@ -55,6 +55,8 @@ ssh_cmd() {
 
 # rsync mit gespeichertem Passwort ausführen
 rsync_cmd() {
+    # Stelle sicher, dass wir im Projekt-Root sind
+    cd "$(dirname "$0")"
     sshpass -p "$SSH_PASSWORD" rsync -avz --delete \
         --exclude='node_modules/' \
         --exclude='.env' \
@@ -107,7 +109,7 @@ full_deployment() {
     fi
 
     # In Projekt-Root wechseln
-    cd "$(dirname "$0")/.."
+    cd "$(dirname "$0")"
 
     # Dateien synchronisieren
     log_info "Synchronizing files to TrueNAS..."
@@ -157,7 +159,7 @@ quick_update() {
     fi
 
     # In Projekt-Root wechseln
-    cd "$(dirname "$0")/.."
+    cd "$(dirname "$0")"
 
     # Nur geänderte Dateien synchronisieren
     log_info "Synchronizing changed files..."
