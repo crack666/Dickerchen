@@ -49,8 +49,15 @@ jobs:
         TIME_SLOT="${{ steps.time_check.outputs.time_slot }}"
         echo "🔔 Smart notifications at $(date) - Time slot: $TIME_SLOT"
 
+        # Try to wake up server first
+        echo "🌅 Attempting to wake up server..."
+        curl -s --max-time 5 https://dickerchen.fly.dev/api/test || echo "Server wake-up attempt failed"
+
+        # Wait a moment
+        sleep 3
+
         # Send notifications with timeout
-        if curl -f --max-time 15 https://dickerchen.crackhost.com/api/send-notifications/$TIME_SLOT \
+        if curl -f --max-time 15 https://dickerchen.fly.dev/api/send-notifications/$TIME_SLOT \
           -H "Authorization: Bearer ${{ secrets.NOTIFICATION_SECRET }}" \
           -H "Content-Type: application/json" 2>/dev/null; then
           echo "✅ Smart notifications sent successfully"
