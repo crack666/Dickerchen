@@ -11,9 +11,6 @@ const https = require('https');
 const fs = require('fs');
 const NotificationManager = require('./notification-manager');
 
-// Initialize global debug logs array
-global.debugLogs = [];
-
 const app = express();
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
 const PORT = process.env.PORT || 3001;
@@ -46,40 +43,14 @@ setInterval(async () => {
 
 // Helper function for consistent timezone handling
 function getBerlinDateString(date = new Date()) {
-  // Convert to Berlin timezone and return YYYY-MM-DD format
-  const berlinDate = new Date(date.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
-  return berlinDate.getFullYear() + '-' + 
-         String(berlinDate.getMonth() + 1).padStart(2, '0') + '-' + 
-         String(berlinDate.getDate()).padStart(2, '0');
-}
-
-// Helper function to ensure timestamp is in Berlin time
-function ensureBerlinTime(timestamp) {
-  if (!timestamp) return null;
-  
-  const date = new Date(timestamp);
-  const hours = date.getUTCHours();
-  
-  // If timestamp is before 05:00 UTC, it's likely UTC and needs conversion
-  // If it's 05:00 or later, it's likely already Berlin time
-  if (hours < 5) {
-    return convertToBerlinISOString(timestamp); // Convert from UTC
-  } else {
-    return timestamp; // Already in Berlin time
-  }
-}
-
-// Helper function to convert UTC timestamp to Berlin ISO string
-function convertToBerlinISOString(utcTimestamp) {
-  try {
-    const utcDate = new Date(utcTimestamp);
-    // Simple conversion: UTC + 2 hours for Berlin (DST)
-    const berlinDate = new Date(utcDate.getTime() + (2 * 60 * 60 * 1000));
-    return berlinDate.toISOString();
-  } catch (error) {
-    console.error('Error converting timestamp:', error);
-    return utcTimestamp; // Return original if conversion fails
-  }
+  // Use Intl.DateTimeFormat for consistent timezone conversion
+  const formatter = new Intl.DateTimeFormat('sv-SE', { // 'sv-SE' gives YYYY-MM-DD format
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return formatter.format(date);
 }
 
 // PostgreSQL connection - Environment-based
@@ -259,28 +230,21 @@ app.get('/api/leaderboard', async (req, res) => {
 
     // Calculate leaderboard data for each user
     const leaderboardData = await Promise.all(users.map(async (user) => {
-      // Get today's pushups for this user (already in Berlin time)
+      // Get today's pushups for this user, ordered by timestamp (Berlin timezone)
       const pushupsResult = await pool.query(
-        'SELECT count, timestamp FROM pushups WHERE user_id = $1 AND DATE(timestamp) = $2 ORDER BY timestamp ASC',
+        'SELECT count, (timestamp AT TIME ZONE \'UTC\' AT TIME ZONE \'Europe/Berlin\') as timestamp FROM pushups WHERE user_id = $1 AND to_char((timestamp AT TIME ZONE \'UTC\' AT TIME ZONE \'Europe/Berlin\'), \'YYYY-MM-DD\') = $2 ORDER BY timestamp ASC',
         [user.id, todayStr]
       );
 
       const pushups = pushupsResult.rows;
       let total = 0;
       let goalReachedAt = null;
-      let currentTotalReachedAt = null;
 
       // Calculate running total and find when goal was reached
       for (const pushup of pushups) {
         total += pushup.count;
         if (total >= dailyGoal && goalReachedAt === null) {
-          // Convert timestamp to Berlin time for display
-          goalReachedAt = convertToBerlinISOString(pushup.timestamp);
-        }
-        // Track when current total was reached (for sorting)
-        if (currentTotalReachedAt === null) {
-          // Convert timestamp to Berlin time
-          currentTotalReachedAt = convertToBerlinISOString(pushup.timestamp);
+          goalReachedAt = pushup.timestamp;
         }
       }
       
@@ -289,12 +253,11 @@ app.get('/api/leaderboard', async (req, res) => {
         name: user.name,
         total: total,
         hasReachedGoal: total >= dailyGoal,
-        goalReachedAt: goalReachedAt,
-        currentTotalReachedAt: currentTotalReachedAt
+        goalReachedAt: goalReachedAt
       };
     }));
     
-    // Smart sorting: goal achievers by time, others by total and time
+    // Smart sorting: goal achievers by time, others by total
     leaderboardData.sort((a, b) => {
       // Both reached goal: sort by time (earliest first)
       if (a.hasReachedGoal && b.hasReachedGoal) {
@@ -305,12 +268,8 @@ app.get('/api/leaderboard', async (req, res) => {
       if (a.hasReachedGoal && !b.hasReachedGoal) return -1;
       if (!a.hasReachedGoal && b.hasReachedGoal) return 1;
       
-      // Neither reached goal: sort by total (highest first), then by time (earliest first)
-      if (a.total !== b.total) {
-        return b.total - a.total;
-      }
-      // Same total: earlier achiever goes first
-      return new Date(a.currentTotalReachedAt) - new Date(b.currentTotalReachedAt);
+      // Neither reached goal: sort by total (highest first)
+      return b.total - a.total;
     });
     
     res.json(leaderboardData);
@@ -336,43 +295,10 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Helper function to get correct Berlin time as UTC ISO string
-function getBerlinTimeISOString() {
-  const now = new Date();
-  // Container is in CEST (UTC+2), but Node.js still uses UTC internally
-  // So we need to add 2 hours to get the correct UTC time
-  const berlinTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
-  return berlinTime.toISOString();
-}
-
 app.post('/api/pushups', async (req, res) => {
   try {
     const { userId, count } = req.body;
-    
-    // Use correct Berlin time
-    const serverTimestamp = getBerlinTimeISOString();
-    
-    const result = await pool.query(
-      'INSERT INTO pushups (user_id, count, timestamp) VALUES ($1, $2, $3) RETURNING *', 
-      [userId, count, serverTimestamp]
-    );
-    
-    // Add to debug logs
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      action: 'pushup_added',
-      userId: userId,
-      message: `User ${userId} added ${count} pushups`,
-      count: count,
-      pushupId: result.rows[0].id
-    };
-    
-    global.debugLogs = global.debugLogs || [];
-    global.debugLogs.push(logEntry);
-    // Keep only last 10 entries
-    if (global.debugLogs.length > 10) {
-      global.debugLogs = global.debugLogs.slice(-10);
-    }
+    const result = await pool.query('INSERT INTO pushups (user_id, count) VALUES ($1, $2) RETURNING *', [userId, count]);
     
     // Trigger smart notifications based on this push-up entry
     setTimeout(async () => {
@@ -415,23 +341,6 @@ app.delete('/api/pushups/:pushupId', async (req, res) => {
       [pushupId]
     );
     
-    // Add to debug logs
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      action: 'pushup_deleted',
-      userId: userId,
-      message: `User ${userId} deleted pushup entry ${pushupId} (${result.rows[0].count} pushups)`,
-      pushupId: pushupId,
-      deletedCount: result.rows[0].count
-    };
-    
-    global.debugLogs = global.debugLogs || [];
-    global.debugLogs.push(logEntry);
-    // Keep only last 10 entries
-    if (global.debugLogs.length > 10) {
-      global.debugLogs = global.debugLogs.slice(-10);
-    }
-    
     res.json({ 
       success: true, 
       deleted: result.rows[0],
@@ -442,47 +351,29 @@ app.delete('/api/pushups/:pushupId', async (req, res) => {
   }
 });
 
-// Helper function to convert UTC timestamp to Berlin time ISO string
-function convertToBerlinTime(utcTimestamp) {
-  const date = new Date(utcTimestamp);
-  // Add 2 hours for CEST (UTC+2)
-  const berlinTime = new Date(date.getTime() + (2 * 60 * 60 * 1000));
-  return berlinTime.toISOString();
-}
-
 app.get('/api/pushups/:userId', async (req, res) => {
   try {
-    // Get today's date in UTC for database query (since timestamps are stored in UTC)
-    const today = new Date();
-    const todayStr = today.getFullYear() + '-' + 
-                     String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-                     String(today.getDate()).padStart(2, '0');
+    // Get today's date in Berlin timezone using consistent helper function
+    const todayStr = getBerlinDateString();
 
-    console.log(`🕐 Getting pushups for user ${req.params.userId} on UTC date: ${todayStr}`);
+    console.log(`🕐 Getting pushups for user ${req.params.userId} on Berlin date: ${todayStr}`);
 
     const result = await pool.query(`
       SELECT 
         id,
         user_id,
         count,
-        timestamp
+        (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as timestamp
       FROM pushups
       WHERE user_id = $1
-      AND DATE(timestamp) = $2
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
       ORDER BY timestamp ASC
     `, [req.params.userId, todayStr]);
 
     console.log(`📊 Found ${result.rows.length} pushups for user ${req.params.userId} on ${todayStr}`);
 
     const total = result.rows.reduce((sum, p) => sum + p.count, 0);
-    
-    // Convert timestamps to Berlin time for frontend display
-    const pushupsWithBerlinTime = result.rows.map(pushup => ({
-      ...pushup,
-      timestamp: convertToBerlinISOString(pushup.timestamp)
-    }));
-    
-    res.json({ total, pushups: pushupsWithBerlinTime });
+    res.json({ total, pushups: result.rows });
   } catch (err) {
     console.error('❌ Error in GET /api/pushups/:userId:', err);
     res.status(500).json({ error: err.message });
@@ -504,22 +395,15 @@ app.get('/api/pushups/:userId/date/:date', async (req, res) => {
         id,
         user_id,
         count,
-        timestamp
+        (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as timestamp
       FROM pushups 
       WHERE user_id = $1 
-      AND DATE(timestamp) = $2
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
       ORDER BY timestamp ASC
     `, [userId, date]);
     
     const total = result.rows.reduce((sum, p) => sum + p.count, 0);
-    
-    // Convert timestamps to Berlin time for frontend display
-    const pushupsWithBerlinTime = result.rows.map(pushup => ({
-      ...pushup,
-      timestamp: convertToBerlinISOString(pushup.timestamp)
-    }));
-    
-    res.json({ total, pushups: pushupsWithBerlinTime, date });
+    res.json({ total, pushups: result.rows, date });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -540,7 +424,7 @@ app.get('/api/pushups/:userId/yearly-potential', async (req, res) => {
 
     // Get the date of the first pushup for this user
     const firstPushupResult = await pool.query(`
-      SELECT MIN(timestamp) as first_date
+      SELECT MIN(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as first_date
       FROM pushups 
       WHERE user_id = $1
     `, [userId]);
@@ -552,7 +436,9 @@ app.get('/api/pushups/:userId/yearly-potential', async (req, res) => {
 
     const firstPushupDate = new Date(firstPushupResult.rows[0].first_date);
     const today = new Date();
-    const todayBerlin = new Date(today.toLocaleString("en-US", {timeZone: "Europe/Berlin"}));
+    // Use consistent Berlin date calculation
+    const todayBerlinStr = getBerlinDateString(today);
+    const todayBerlin = new Date(todayBerlinStr + 'T00:00:00.000Z');
 
     // Calculate days since first pushup
     const daysSinceFirst = Math.floor((todayBerlin - firstPushupDate) / (1000 * 60 * 60 * 24)) + 1; // +1 to include today
@@ -565,10 +451,11 @@ app.get('/api/pushups/:userId/yearly-potential', async (req, res) => {
     const theoreticalMaximum = daysSinceFirst * 100;
     
     // Calculate deficit (what user should have done vs. what they actually did)
-    const deficit = theoreticalMaximum - actualTotal;
+    const deficit = Math.max(0, theoreticalMaximum - actualTotal); // Only count positive deficits
     
     // Calculate yearly potential: 365 days * 100 - deficit
-    const yearlyPotential = (365 * 100) - deficit;
+    // Cap at 36500 - no one can exceed the theoretical maximum
+    const yearlyPotential = Math.min(36500, (365 * 100) - deficit);
     
     const remaining = yearlyPotential - actualTotal;
 
@@ -596,13 +483,13 @@ app.get('/api/pushups/:userId/calendar', async (req, res) => {
     const endDate = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
     
     const result = await pool.query(`
-      SELECT DATE(timestamp) as date, SUM(count) as total
+      SELECT to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, SUM(count) as total
       FROM pushups 
       WHERE user_id = $1 
-      AND DATE(timestamp) >= $2 
-      AND DATE(timestamp) <= $3
-      GROUP BY DATE(timestamp)
-      ORDER BY DATE(timestamp)
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
+      GROUP BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      ORDER BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
     `, [req.params.userId, startDate, endDate]);
     
     res.json(result.rows);
@@ -623,14 +510,14 @@ app.get('/api/calendar/:userId/:year/:month', async (req, res) => {
     
     const result = await pool.query(`
       SELECT 
-        DATE(timestamp) as date, 
+        to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, 
         SUM(count) as total
       FROM pushups 
       WHERE user_id = $1 
-      AND DATE(timestamp) >= $2 
-      AND DATE(timestamp) <= $3
-      GROUP BY DATE(timestamp)
-      ORDER BY DATE(timestamp)
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
+      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
+      GROUP BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      ORDER BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
     `, [userId, startDate, endDate]);
     
     res.json(result.rows);
@@ -652,10 +539,8 @@ app.post('/api/subscribe', async (req, res) => {
     // Add to debug logs
     const logEntry = {
       timestamp: new Date().toISOString(),
-      action: 'subscription_request',
       userId: userId,
       userIdType: typeof userId,
-      message: `User ${userId} subscribed to push notifications`,
       hasSubscription: !!subscription,
       hasEndpoint: !!subscription?.endpoint,
       hasKeys: !!subscription?.keys,
@@ -790,25 +675,6 @@ app.post('/api/send-notification', async (req, res) => {
     await webPush.sendNotification(subscription, payload);
     console.log('✅ Push notification sent successfully');
     
-    // Add to debug logs
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      action: 'notification_sent',
-      userId: userId,
-      fromUserId: fromUserId,
-      message: `Notification sent to user ${userId}${fromUserId ? ` from user ${fromUserId}` : ''}: "${title}" - "${body}"`,
-      title: title,
-      body: body,
-      senderName: senderName
-    };
-    
-    global.debugLogs = global.debugLogs || [];
-    global.debugLogs.push(logEntry);
-    // Keep only last 10 entries
-    if (global.debugLogs.length > 10) {
-      global.debugLogs = global.debugLogs.slice(-10);
-    }
-    
     res.status(200).json({ success: true, message: 'Notification sent successfully' });
   } catch (error) {
     console.error('❌ Error sending notification:', error);
@@ -840,16 +706,12 @@ app.post('/api/motivate-all', async (req, res) => {
 // Debug endpoint - list all subscriptions
 app.get('/api/debug/subscriptions', async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT ps.user_id, ps.endpoint, ps.created_at, u.name as user_name
-      FROM push_subscriptions ps
-      LEFT JOIN users u ON ps.user_id = u.id
-      ORDER BY ps.user_id
-    `);
+    const result = await pool.query(
+      'SELECT user_id, endpoint, created_at FROM push_subscriptions ORDER BY user_id'
+    );
     
     const subscriptions = result.rows.map(row => ({
       userId: row.user_id,
-      userName: row.user_name || 'Unknown User',
       endpoint: row.endpoint?.substring(0, 50) + '...',
       createdAt: row.created_at
     }));
@@ -865,6 +727,9 @@ app.get('/api/debug/subscriptions', async (req, res) => {
   }
 });
 
+// Initialize debug logs array
+global.debugLogs = [];
+
 // Simple test endpoint
 app.get('/api/test', (req, res) => {
   res.json({
@@ -872,27 +737,6 @@ app.get('/api/test', (req, res) => {
     timestamp: new Date().toISOString(),
     publicPath: publicPath
   });
-});
-
-// Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    // Test database connection
-    const result = await pool.query('SELECT 1 as health_check');
-    res.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      database: 'connected',
-      uptime: process.uptime()
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      database: 'disconnected',
-      error: error.message
-    });
-  }
 });
 
 // Daily notifications endpoint (for GitHub Actions)
@@ -1016,7 +860,12 @@ app.listen(PORT, HOST, () => {
 // Smart notification logic - triggered when someone adds push-ups
 async function checkForSmartNotifications(triggerUserId, addedCount) {
   const berlinDate = getBerlinDateString();
-  const currentHour = new Date().toLocaleString("en-US", {timeZone: "Europe/Berlin", hour: "numeric", hour12: false});
+  // Use Intl.DateTimeFormat for consistent timezone handling
+  const currentHour = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Berlin',
+    hour: 'numeric',
+    hour12: false
+  }).format(new Date());
   
   console.log(`🧠 Smart notification check: User ${triggerUserId} added ${addedCount} push-ups at ${currentHour}h`);
   
@@ -1175,31 +1024,3 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
   console.log('📝 No SSL certificates found - running HTTP only');
   console.log('💡 HTTPS handled by Fly.io in production');
 }
-
-// Debug endpoint to fix timestamps
-app.post('/api/fix-timestamps', async (req, res) => {
-  try {
-    const { userId, hoursToAdd } = req.body;
-    
-    if (!userId || !hoursToAdd) {
-      return res.status(400).json({ error: 'userId and hoursToAdd required' });
-    }
-    
-    // Update timestamps by adding hours
-    const result = await pool.query(`
-      UPDATE pushups 
-      SET timestamp = timestamp + INTERVAL '${hoursToAdd} hours'
-      WHERE user_id = $1
-      AND DATE(timestamp) = CURRENT_DATE
-      RETURNING id, timestamp
-    `, [userId]);
-    
-    res.json({ 
-      success: true, 
-      updated: result.rowCount,
-      message: `Added ${hoursToAdd} hours to ${result.rowCount} timestamps for user ${userId}`
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});

@@ -803,7 +803,7 @@ async function loadAlltimeStats() {
         potentialElement.innerHTML = `
           🚀 <span style="color: #27ae60; font-weight: bold;">36500</span>${deficitText} = 
           <span style="color: #3498db; font-weight: bold;">${potentialData.yearlyPotential}</span> Dicke möglich!<br>
-          <small style="color: #7f8c8d; font-size: 0.8em;">
+          <small style="color: #3bbec8ff; font-size: 0.8em;">
             Nur noch ${remainingDays} Tage und ${potentialData.remaining} Dicke!
           </small>
         `;
@@ -1334,24 +1334,8 @@ async function showDebugInfo() {
     const response = await fetch(`${API_BASE}/debug/subscriptions`);
     const data = await response.json();
     
-    // Format subscriptions with user names
-    const formattedSubscriptions = data.subscriptions.map(sub => 
-      `👤 ${sub.userName} (ID: ${sub.userId})\n   📍 ${sub.endpoint}\n   📅 ${new Date(sub.createdAt).toLocaleString()}`
-    ).join('\n\n');
-    
-    // Format logs with messages
-    const formattedLogs = data.lastLogs.map(log => 
-      `🕒 ${new Date(log.timestamp).toLocaleString()}\n   👤 User ${log.userId}\n   💬 ${log.message || 'No message'}\n   📊 ${JSON.stringify({
-        action: log.action,
-        hasSubscription: log.hasSubscription,
-        hasEndpoint: log.hasEndpoint,
-        hasKeys: log.hasKeys
-      }, null, 2)}`
-    ).join('\n\n---\n\n');
-    
-    document.getElementById('debug-subscriptions').textContent = 
-      `📊 Total Subscriptions: ${data.total}\n\n${formattedSubscriptions}`;
-    document.getElementById('debug-logs').textContent = formattedLogs;
+    document.getElementById('debug-subscriptions').textContent = JSON.stringify(data.subscriptions, null, 2);
+    document.getElementById('debug-logs').textContent = JSON.stringify(data.lastLogs, null, 2);
     
     document.getElementById('debug-modal').style.display = 'block';
   } catch (error) {
