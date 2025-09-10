@@ -798,13 +798,37 @@ async function loadAlltimeStats() {
       const potentialElement = document.getElementById('yearly-potential-text');
       if (potentialElement) {
         const remainingDays = 365 - potentialData.daysSinceFirst;
-        const deficitText = potentialData.deficit > 0 ? ` - <span style="color: #e74c3c; font-weight: bold;">${potentialData.deficit}</span>` : '';
+        const deficit = potentialData.deficit || 0;
+        const yearlyPotential = potentialData.yearlyPotential;
+        
+        let message = '';
+        let statusIcon = '';
+        let statusColor = '';
+        
+        if (deficit === 0) {
+          // Perfect on track
+          statusIcon = '🎯';
+          statusColor = '#27ae60';
+          message = `${statusIcon} <span style="color: ${statusColor}; font-weight: bold;">Perfekt auf Kurs für ${yearlyPotential} Dicke!</span>`;
+        } else if (yearlyPotential > 36500) {
+          // Overcompensated - can achieve more than theoretical max
+          statusIcon = '🚀';
+          statusColor = '#9b59b6';
+          const bonus = yearlyPotential - 36500;
+          message = `${statusIcon} <span style="color: ${statusColor}; font-weight: bold;">Du warst so fleißig, dass du ${yearlyPotential} schaffen könntest!</span><br>
+                    <small style="color: #95a5a6; font-size: 0.8em;">Das sind ${bonus} mehr als das theoretische Maximum!</small>`;
+        } else {
+          // Behind schedule - show deficit impact
+          statusIcon = '💪';
+          statusColor = '#e74c3c';
+          message = `${statusIcon} <span style="color: ${statusColor}; font-weight: bold;">Durch dein Defizit von ${deficit} sind nur noch ${yearlyPotential} möglich.</span><br>
+                    <small style="color: #13d7e5ff; font-size: 0.8em;">Aber du kannst noch aufholen!</small>`;
+        }
         
         potentialElement.innerHTML = `
-          🚀 <span style="color: #27ae60; font-weight: bold;">36500</span>${deficitText} = 
-          <span style="color: #3498db; font-weight: bold;">${potentialData.yearlyPotential}</span> Dicke möglich!<br>
-          <small style="color: #3bbec8ff; font-size: 0.8em;">
-            Nur noch ${remainingDays} Tage und ${potentialData.remaining} Dicke!
+          ${message}<br>
+          <small style="color: #13d7e5ff; font-size: 0.75em; margin-top: 5px; display: block;">
+            Nur noch ${remainingDays} Tage und ${potentialData.remaining} Dicke bis zum Ziel!
           </small>
         `;
         potentialElement.style.display = 'block';
