@@ -90,10 +90,18 @@
         <div class="modal-content">
           <span class="close debug-close">&times;</span>
           <h2>🔍 Debug Information</h2>
-          <h3>Push Subscriptions:</h3>
-          <pre id="debug-subscriptions"></pre>
-          <h3>Recent Logs:</h3>
-          <pre id="debug-logs"></pre>
+          
+          <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+            <div style="flex: 1;">
+              <h3>📱 Push Subscriptions:</h3>
+              <pre id="debug-subscriptions" style="background: #f8f9fa; padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto;"></pre>
+            </div>
+            
+            <div style="flex: 1;">
+              <h3>📋 Recent Logs:</h3>
+              <pre id="debug-logs" style="background: #f8f9fa; padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto;"></pre>
+            </div>
+          </div>
         </div>
       </div>
     </main>

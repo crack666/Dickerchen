@@ -742,13 +742,68 @@ button:active {
 
 .modal-content {
   background-color: #fefefe;
-  margin: 15% auto;
+  margin: 5% auto;
   padding: 20px;
   border: 1px solid #888;
-  width: 80%;
-  max-width: 500px;
+  width: 95%;
+  max-width: 900px;
   border-radius: 15px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 98%;
+    max-width: none;
+    margin: 2% auto;
+    padding: 15px;
+  }
+  
+  /* Stack debug sections vertically on mobile */
+  #debug-modal .modal-content > div {
+    display: block !important;
+  }
+  
+  #debug-modal .modal-content > div > div {
+    margin-bottom: 20px;
+  }
+  
+  /* Adjust font sizes for mobile */
+  #debug-modal pre {
+    font-size: 11px !important;
+    padding: 10px !important;
+    max-height: 200px !important;
+  }
+  
+  #debug-modal h3 {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-content {
+    width: 99%;
+    margin: 1% auto;
+    padding: 10px;
+  }
+  
+  #debug-modal pre {
+    font-size: 10px !important;
+    padding: 8px !important;
+    max-height: 150px !important;
+  }
+  
+  #debug-modal h2 {
+    font-size: 18px;
+    margin-bottom: 15px;
+  }
+  
+  #debug-modal h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
 }
 
 .close {

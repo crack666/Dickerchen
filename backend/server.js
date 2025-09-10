@@ -1,3 +1,6 @@
+// Load environment variables from .env file
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -7,6 +10,9 @@ const path = require('path');
 const https = require('https');
 const fs = require('fs');
 const NotificationManager = require('./notification-manager');
+
+// Initialize global debug logs array
+global.debugLogs = [];
 
 const app = express();
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
@@ -294,6 +300,23 @@ app.post('/api/pushups', async (req, res) => {
     const { userId, count } = req.body;
     const result = await pool.query('INSERT INTO pushups (user_id, count) VALUES ($1, $2) RETURNING *', [userId, count]);
     
+    // Add to debug logs
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      action: 'pushup_added',
+      userId: userId,
+      message: `User ${userId} added ${count} pushups`,
+      count: count,
+      pushupId: result.rows[0].id
+    };
+    
+    global.debugLogs = global.debugLogs || [];
+    global.debugLogs.push(logEntry);
+    // Keep only last 10 entries
+    if (global.debugLogs.length > 10) {
+      global.debugLogs = global.debugLogs.slice(-10);
+    }
+    
     // Trigger smart notifications based on this push-up entry
     setTimeout(async () => {
       try {
@@ -334,6 +357,23 @@ app.delete('/api/pushups/:pushupId', async (req, res) => {
       'DELETE FROM pushups WHERE id = $1 RETURNING *',
       [pushupId]
     );
+    
+    // Add to debug logs
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      action: 'pushup_deleted',
+      userId: userId,
+      message: `User ${userId} deleted pushup entry ${pushupId} (${result.rows[0].count} pushups)`,
+      pushupId: pushupId,
+      deletedCount: result.rows[0].count
+    };
+    
+    global.debugLogs = global.debugLogs || [];
+    global.debugLogs.push(logEntry);
+    // Keep only last 10 entries
+    if (global.debugLogs.length > 10) {
+      global.debugLogs = global.debugLogs.slice(-10);
+    }
     
     res.json({ 
       success: true, 
@@ -530,8 +570,10 @@ app.post('/api/subscribe', async (req, res) => {
     // Add to debug logs
     const logEntry = {
       timestamp: new Date().toISOString(),
+      action: 'subscription_request',
       userId: userId,
       userIdType: typeof userId,
+      message: `User ${userId} subscribed to push notifications`,
       hasSubscription: !!subscription,
       hasEndpoint: !!subscription?.endpoint,
       hasKeys: !!subscription?.keys,
@@ -666,6 +708,25 @@ app.post('/api/send-notification', async (req, res) => {
     await webPush.sendNotification(subscription, payload);
     console.log('✅ Push notification sent successfully');
     
+    // Add to debug logs
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      action: 'notification_sent',
+      userId: userId,
+      fromUserId: fromUserId,
+      message: `Notification sent to user ${userId}${fromUserId ? ` from user ${fromUserId}` : ''}: "${title}" - "${body}"`,
+      title: title,
+      body: body,
+      senderName: senderName
+    };
+    
+    global.debugLogs = global.debugLogs || [];
+    global.debugLogs.push(logEntry);
+    // Keep only last 10 entries
+    if (global.debugLogs.length > 10) {
+      global.debugLogs = global.debugLogs.slice(-10);
+    }
+    
     res.status(200).json({ success: true, message: 'Notification sent successfully' });
   } catch (error) {
     console.error('❌ Error sending notification:', error);
@@ -697,12 +758,16 @@ app.post('/api/motivate-all', async (req, res) => {
 // Debug endpoint - list all subscriptions
 app.get('/api/debug/subscriptions', async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT user_id, endpoint, created_at FROM push_subscriptions ORDER BY user_id'
-    );
+    const result = await pool.query(`
+      SELECT ps.user_id, ps.endpoint, ps.created_at, u.name as user_name
+      FROM push_subscriptions ps
+      LEFT JOIN users u ON ps.user_id = u.id
+      ORDER BY ps.user_id
+    `);
     
     const subscriptions = result.rows.map(row => ({
       userId: row.user_id,
+      userName: row.user_name || 'Unknown User',
       endpoint: row.endpoint?.substring(0, 50) + '...',
       createdAt: row.created_at
     }));
@@ -718,9 +783,6 @@ app.get('/api/debug/subscriptions', async (req, res) => {
   }
 });
 
-// Initialize debug logs array
-global.debugLogs = [];
-
 // Simple test endpoint
 app.get('/api/test', (req, res) => {
   res.json({
@@ -728,6 +790,27 @@ app.get('/api/test', (req, res) => {
     timestamp: new Date().toISOString(),
     publicPath: publicPath
   });
+});
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    const result = await pool.query('SELECT 1 as health_check');
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    });
+  }
 });
 
 // Daily notifications endpoint (for GitHub Actions)
