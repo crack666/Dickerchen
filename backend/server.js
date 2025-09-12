@@ -83,18 +83,6 @@ async function initializeDatabase() {
     `);
     console.log('✅ Users table ready');
     
-    // Create pushups table if not exists
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS pushups (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id),
-        count INTEGER NOT NULL,
-        date DATE DEFAULT CURRENT_DATE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    console.log('✅ Pushups table ready');
-    
     // Check if push_subscriptions table exists first
     const tableExists = await pool.query(`
       SELECT EXISTS (
@@ -177,6 +165,23 @@ pool.query(`
     count INTEGER NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
+  
+  -- Migration: Remove obsolete columns if they exist
+  DO $$ 
+  BEGIN
+    -- Remove date column if it exists
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'pushups' AND column_name = 'date') THEN
+      ALTER TABLE pushups DROP COLUMN date;
+    END IF;
+    
+    -- Remove created_at column if it exists (we use timestamp instead)
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'pushups' AND column_name = 'created_at') THEN
+      ALTER TABLE pushups DROP COLUMN created_at;
+    END IF;
+  END $$;
+  
   CREATE TABLE IF NOT EXISTS push_subscriptions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER UNIQUE REFERENCES users(id),
@@ -298,7 +303,12 @@ app.post('/api/users', async (req, res) => {
 app.post('/api/pushups', async (req, res) => {
   try {
     const { userId, count } = req.body;
-    const result = await pool.query('INSERT INTO pushups (user_id, count) VALUES ($1, $2) RETURNING *', [userId, count]);
+    
+    // Use explicit Berlin timezone timestamp for consistency
+    const result = await pool.query(
+      'INSERT INTO pushups (user_id, count, timestamp) VALUES ($1, $2, NOW() AT TIME ZONE \'Europe/Berlin\') RETURNING *', 
+      [userId, count]
+    );
     
     // Trigger smart notifications based on this push-up entry
     setTimeout(async () => {
