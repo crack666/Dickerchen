@@ -109,6 +109,35 @@ async function initializeDatabase() {
       console.log('✅ Push subscriptions table created');
     } else {
       console.log('✅ Push subscriptions table already exists');
+      
+      // Migration: Ensure correct column structure
+      await pool.query(`
+        DO $$
+        BEGIN
+          -- Add missing columns if they don't exist
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'push_subscriptions' AND column_name = 'endpoint') THEN
+            ALTER TABLE push_subscriptions ADD COLUMN endpoint TEXT;
+          END IF;
+          
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'push_subscriptions' AND column_name = 'p256dh') THEN
+            ALTER TABLE push_subscriptions ADD COLUMN p256dh TEXT;
+          END IF;
+          
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'push_subscriptions' AND column_name = 'auth') THEN
+            ALTER TABLE push_subscriptions ADD COLUMN auth TEXT;
+          END IF;
+          
+          -- Remove old subscription column if it exists
+          IF EXISTS (SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'push_subscriptions' AND column_name = 'subscription') THEN
+            ALTER TABLE push_subscriptions DROP COLUMN subscription;
+          END IF;
+        END $$
+      `);
+      console.log('✅ Push subscriptions table migrated');
     }
     
     console.log('✅ Database tables initialized successfully');
@@ -151,6 +180,75 @@ app.get('/favicon.ico', (req, res) => {
   res.sendFile(faviconPath);
 });
 
+// Safe database migration - runs only once
+async function runDatabaseMigrations() {
+  try {
+    console.log('🔍 Checking for required database migrations...');
+
+    // Check if obsolete columns exist in pushups table
+    const obsoleteColumns = await pool.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'pushups'
+      AND column_name IN ('date', 'created_at')
+    `);
+
+    if (obsoleteColumns.rows.length > 0) {
+      console.log('🛠️ Running database migration to remove obsolete columns...');
+
+      // Remove obsolete columns safely
+      for (const row of obsoleteColumns.rows) {
+        const columnName = row.column_name;
+        await pool.query(`ALTER TABLE pushups DROP COLUMN IF EXISTS ${columnName}`);
+        console.log(`✅ Removed obsolete column: ${columnName}`);
+      }
+
+      console.log('✅ Database migration completed successfully');
+    } else {
+      console.log('ℹ️ No migrations needed - database is up to date');
+    }
+
+    // Check and migrate push_subscriptions table structure
+    const subscriptionColumns = await pool.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'push_subscriptions'
+    `);
+
+    const hasOldStructure = subscriptionColumns.rows.some(row =>
+      row.column_name === 'subscription'
+    );
+    const hasNewStructure = subscriptionColumns.rows.some(row =>
+      ['endpoint', 'p256dh', 'auth'].includes(row.column_name)
+    );
+
+    if (hasOldStructure && !hasNewStructure) {
+      console.log('🛠️ Migrating push_subscriptions table structure...');
+
+      // Add new columns
+      await pool.query(`
+        ALTER TABLE push_subscriptions
+        ADD COLUMN IF NOT EXISTS endpoint TEXT,
+        ADD COLUMN IF NOT EXISTS p256dh TEXT,
+        ADD COLUMN IF NOT EXISTS auth TEXT
+      `);
+
+      // TODO: Migrate data from old subscription column to new structure
+      // This would require parsing the JSON subscription data
+
+      console.log('✅ Push subscriptions table migrated');
+    } else if (!hasOldStructure && !hasNewStructure) {
+      console.log('ℹ️ Push subscriptions table needs to be created');
+    } else {
+      console.log('ℹ️ Push subscriptions table structure is correct');
+    }
+
+  } catch (error) {
+    console.error('❌ Database migration error:', error);
+    // Don't fail the server startup, just log the error
+  }
+}
+
 // Create tables
 pool.query(`
   CREATE TABLE IF NOT EXISTS users (
@@ -165,33 +263,10 @@ pool.query(`
     count INTEGER NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
-  
-  -- Migration: Remove obsolete columns if they exist
-  DO $$ 
-  BEGIN
-    -- Remove date column if it exists
-    IF EXISTS (SELECT 1 FROM information_schema.columns 
-               WHERE table_name = 'pushups' AND column_name = 'date') THEN
-      ALTER TABLE pushups DROP COLUMN date;
-    END IF;
-    
-    -- Remove created_at column if it exists (we use timestamp instead)
-    IF EXISTS (SELECT 1 FROM information_schema.columns 
-               WHERE table_name = 'pushups' AND column_name = 'created_at') THEN
-      ALTER TABLE pushups DROP COLUMN created_at;
-    END IF;
-  END $$;
-  
-  CREATE TABLE IF NOT EXISTS push_subscriptions (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER UNIQUE REFERENCES users(id),
-    endpoint TEXT NOT NULL,
-    p256dh TEXT NOT NULL,
-    auth TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
 `).catch(err => console.error('Error creating tables:', err));
+
+// Run migrations after table creation
+runDatabaseMigrations();
 
 // Web Push setup with environment-based VAPID keys
 const publicVapidKey = process.env.VAPID_PUBLIC_KEY || 'BKgHClYOTs_CiYQUS-L2yTNc3CBQOMLL0bd22oOz5oJ1J0kXZ0UPD5qkSH0IvBk4-BY6cAXAp2kA5bXz6yTP15w';

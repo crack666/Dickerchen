@@ -210,7 +210,7 @@ class NotificationManager {
     try {
       // Get user's push subscriptions
       const subscriptions = await pool.query(
-        'SELECT subscription FROM push_subscriptions WHERE user_id = $1',
+        'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1',
         [userId]
       );
 
@@ -222,7 +222,14 @@ class NotificationManager {
       let successCount = 0;
       for (const row of subscriptions.rows) {
         try {
-          const subscription = row.subscription;
+          const subscription = {
+            endpoint: row.endpoint,
+            keys: {
+              p256dh: row.p256dh,
+              auth: row.auth
+            }
+          };
+
           await webPush.sendNotification(subscription, JSON.stringify({
             title: title,
             body: body,
@@ -235,7 +242,7 @@ class NotificationManager {
           console.log(`Failed to send notification to user ${userId}:`, error.message);
           // Remove invalid subscriptions
           if (error.statusCode === 410) {
-            await pool.query('DELETE FROM push_subscriptions WHERE user_id = $1 AND subscription = $2', [userId, row.subscription]);
+            await pool.query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [userId, row.endpoint]);
           }
         }
       }
@@ -329,6 +336,31 @@ class NotificationManager {
       evening: 'Letzte Chance! 🌙'
     };
     return titles[timeSlot] || 'Dickerchen! 💪';
+  }
+
+  // Get users close to their daily goal (80-95% of daily goal)
+  async getUsersCloseToGoal() {
+    const today = this.getBerlinDateString();
+
+    const query = `
+      SELECT
+        u.id,
+        u.name,
+        COALESCE(SUM(CASE WHEN DATE(p.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') = $1 THEN p.count END), 0) as today_total,
+        COALESCE(SUM(p.count), 0) as total_all_time
+      FROM users u
+      LEFT JOIN pushups p ON u.id = p.user_id
+      GROUP BY u.id, u.name
+      HAVING COALESCE(SUM(CASE WHEN DATE(p.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') = $1 THEN p.count END), 0) BETWEEN $2 AND $3
+      ORDER BY RANDOM()
+    `;
+
+    // Get users with 80-95% of daily goal
+    const minGoal = Math.floor(this.dailyGoal * 0.8); // 80% of 100 = 80
+    const maxGoal = Math.floor(this.dailyGoal * 0.95); // 95% of 100 = 95
+
+    const result = await pool.query(query, [today, minGoal, maxGoal]);
+    return result.rows;
   }
 
   // Wake up the server (for Fly.io)
