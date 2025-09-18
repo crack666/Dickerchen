@@ -10,7 +10,18 @@
 <body>
   <div id="app">
     <header>
-      <h1>💪 Dickerchen</h1>
+      <div class="exercise-switcher">
+        <button class="exercise-btn current-exercise" data-exercise="pushups">
+          <img src="pushup_weak.png" alt="Push-ups" class="exercise-icon">
+        </button>
+        <button class="exercise-btn" data-exercise="squats">
+          <img src="squats1_weak.png" alt="Squats" class="exercise-icon">
+        </button>
+        <button class="exercise-btn" data-exercise="situps">
+          <img src="situps1_weak.png" alt="Sit-ups" class="exercise-icon">
+        </button>
+      </div>
+      <h1 id="exercise-title">💪 Push-ups</h1>
       <p id="motivation">Mach deine Dicken! 🏋️‍♂️</p>
       <div id="tabs">
         <button id="tab-today" class="tab-btn active">Heute</button>
@@ -22,8 +33,9 @@
         <div id="dashboard">
           <div id="progress">
             <div class="progress-header">
-              <h2>Dein Fortschritt heute</h2>
+              <h2 id="progress-title">Dein Fortschritt heute</h2>
               <div class="header-buttons">
+                <button id="combined-btn" class="combined-btn" data-exercise="combined">🎯</button>
                 <button id="save-progress" class="save-btn">💾</button>
                 <button id="share-progress" class="share-btn" style="display: none;">📤 Teilen</button>
               </div>

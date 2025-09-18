@@ -227,6 +227,14 @@ fly deploy
 - **API Calls:** Batch-Requests für Leaderboard-Updates
 - **Mobile:** Touch-Events für Pull-to-Refresh ohne Frameworks
 
+### **⚠️ PostgreSQL Timezone Handling (Wichtig!)**
+- **Problem:** PostgreSQL `timestamp` (ohne `with time zone`) speichert nur Zeit ohne Timezone-Info
+- **Kritischer Bug:** Bei JSON-Export fügt PostgreSQL automatisch `Z` (UTC) Suffix hinzu, auch wenn es Berlin Zeit ist!
+- **Lösung:** Überall `to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')` verwenden für konsistente Berlin Zeit
+- **Frontend:** Erwartet Berlin Zeit als String mit `Z` Suffix, extrahiert Zeit mit `.substring(11, 16)`
+- **Backend:** Speichert mit `NOW() AT TIME ZONE 'Europe/Berlin'`, gibt mit `to_char()` formatiert zurück
+- **Wichtig:** Alle SELECTs müssen `to_char()` verwenden, sonst zeigt Frontend 2 Stunden zu früh an!
+
 ---
 
 ## 🐛 Troubleshooting

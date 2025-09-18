@@ -53,6 +53,29 @@ function getBerlinDateString(date = new Date()) {
   return formatter.format(date);
 }
 
+// Helper functions for multi-exercise support
+function getExerciseTable(exerciseType) {
+  const tables = {
+    'pushups': 'pushups',
+    'squats': 'squats', 
+    'situps': 'situps'
+  };
+  return tables[exerciseType] || null;
+}
+
+function validateExerciseType(exerciseType) {
+  return ['pushups', 'squats', 'situps'].includes(exerciseType);
+}
+
+function getExerciseConfig() {
+  return {
+    combined: { name: 'Combined', emoji: '🎯', defaultGoal: 100 },
+    pushups: { name: 'Push-ups', emoji: '💪', defaultGoal: 40 },
+    squats: { name: 'Squats', emoji: '🦵', defaultGoal: 30 },
+    situps: { name: 'Sit-ups', emoji: '🏋️', defaultGoal: 30 }
+  };
+}
+
 // PostgreSQL connection - Environment-based
 const pool = new Pool(
   process.env.DATABASE_URL ? {
@@ -139,6 +162,28 @@ async function initializeDatabase() {
       `);
       console.log('✅ Push subscriptions table migrated');
     }
+    
+    // Create squats table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS squats (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        count INTEGER NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Squats table ready');
+    
+    // Create situps table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS situps (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        count INTEGER NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Sit-ups table ready');
     
     console.log('✅ Database tables initialized successfully');
   } catch (error) {
@@ -935,6 +980,404 @@ app.post('/api/trigger-fallback', async (req, res) => {
   }
 });
 
+// =================================================================
+// 🏋️ GENERALIZED MULTI-EXERCISE API ENDPOINTS
+// =================================================================
+
+// POST /api/exercises/:exerciseType - Add exercise count
+app.post('/api/exercises/:exerciseType', async (req, res) => {
+  try {
+    const { exerciseType } = req.params;
+    const { userId, count } = req.body;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    
+    // Store Berlin timezone timestamp (consistent with display)
+    const result = await pool.query(
+      `INSERT INTO ${table} (user_id, count, timestamp) VALUES ($1, $2, NOW() AT TIME ZONE 'Europe/Berlin') RETURNING id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp`, 
+      [userId, count]
+    );
+
+    // Trigger smart notifications for significant achievements
+    if (count >= 20) {
+      await checkForSmartNotifications(userId, count);
+    }
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/exercises/combined/:userId/details - Get today's detailed exercise logs for modal
+app.get('/api/exercises/combined/:userId/details', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const today = getBerlinDateString();
+    
+    // Get detailed exercises for each type
+    const promises = ['pushups', 'squats', 'situps'].map(async (exerciseType) => {
+      const table = getExerciseTable(exerciseType);
+      const result = await pool.query(
+        `SELECT id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp 
+         FROM ${table} 
+         WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
+         ORDER BY timestamp DESC`, 
+        [userId, today]
+      );
+      return {
+        exercise: exerciseType,
+        data: result.rows
+      };
+    });
+    
+    const exerciseData = await Promise.all(promises);
+    
+    // Format response as expected by frontend
+    const response = {};
+    exerciseData.forEach(({ exercise, data }) => {
+      response[exercise] = data;
+    });
+    
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/calendar/:userId/date/:date - Get detailed exercise data for specific date
+app.get('/api/calendar/:userId/date/:date', async (req, res) => {
+  try {
+    const { userId, date } = req.params;
+    
+    // Get detailed exercises for each type for specific date
+    const promises = ['pushups', 'squats', 'situps'].map(async (exerciseType) => {
+      const table = getExerciseTable(exerciseType);
+      const result = await pool.query(
+        `SELECT id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp 
+         FROM ${table} 
+         WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
+         ORDER BY timestamp ASC`, 
+        [userId, date]
+      );
+      return {
+        exercise: exerciseType,
+        data: result.rows
+      };
+    });
+    
+    const exerciseData = await Promise.all(promises);
+    
+    // Format response as expected by frontend
+    const response = {};
+    exerciseData.forEach(({ exercise, data }) => {
+      response[exercise] = data;
+    });
+    
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/exercises/combined/:userId - Get today's combined total across all exercises
+app.get('/api/exercises/combined/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const today = getBerlinDateString();
+    
+    // Get today's total for each exercise type
+    const promises = ['pushups', 'squats', 'situps'].map(async (exerciseType) => {
+      const table = getExerciseTable(exerciseType);
+      const result = await pool.query(
+        `SELECT COALESCE(SUM(count), 0) as total 
+         FROM ${table} 
+         WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2`, 
+        [userId, today]
+      );
+      return {
+        exercise: exerciseType,
+        total: parseInt(result.rows[0].total) || 0
+      };
+    });
+    
+    const exerciseTotals = await Promise.all(promises);
+    const combinedTotal = exerciseTotals.reduce((sum, ex) => sum + ex.total, 0);
+    const config = getExerciseConfig();
+    
+    res.json({
+      combinedTotal,
+      dailyGoal: config.combined.defaultGoal,
+      hasReachedGoal: combinedTotal >= config.combined.defaultGoal,
+      breakdown: exerciseTotals.reduce((acc, ex) => {
+        acc[ex.exercise] = {
+          total: ex.total,
+          goal: config[ex.exercise].defaultGoal,
+          hasReachedGoal: ex.total >= config[ex.exercise].defaultGoal
+        };
+        return acc;
+      }, {})
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/exercises/:exerciseType/:userId - Get today's exercises
+app.get('/api/exercises/:exerciseType/:userId', async (req, res) => {
+  try {
+    const { exerciseType, userId } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    const today = getBerlinDateString();
+    
+    const result = await pool.query(
+      `SELECT id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp 
+       FROM ${table} 
+       WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
+       ORDER BY timestamp DESC`, 
+      [userId, today]
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/exercises/:exerciseType/:userId/date/:date - Get exercises for specific date
+app.get('/api/exercises/:exerciseType/:userId/date/:date', async (req, res) => {
+  try {
+    const { exerciseType, userId, date } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    
+    const result = await pool.query(
+      `SELECT id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp 
+       FROM ${table} 
+       WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
+       ORDER BY timestamp DESC`, 
+      [userId, date]
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/exercises/:exerciseType/:userId/total - Get total exercises
+app.get('/api/exercises/:exerciseType/:userId/total', async (req, res) => {
+  try {
+    const { exerciseType, userId } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    
+    const result = await pool.query(`SELECT SUM(count) as total FROM ${table} WHERE user_id = $1`, [userId]);
+    res.json({ total: parseInt(result.rows[0].total) || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/exercises/:exerciseType/:userId/yearly-potential - Get yearly potential
+app.get('/api/exercises/:exerciseType/:userId/yearly-potential', async (req, res) => {
+  try {
+    const { exerciseType, userId } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    const config = getExerciseConfig()[exerciseType];
+    
+    // Calculate yearly potential based on performance
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+    const daysSinceStart = Math.floor((new Date() - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
+    const daysInYear = new Date().getFullYear() % 4 === 0 ? 366 : 365;
+    
+    // Get total exercises done this year
+    const yearResult = await pool.query(
+      `SELECT SUM(count) as total FROM ${table} 
+       WHERE user_id = $1 AND EXTRACT(YEAR FROM timestamp) = $2`, 
+      [userId, new Date().getFullYear()]
+    );
+    
+    const totalThisYear = parseInt(yearResult.rows[0].total) || 0;
+    const dailyGoal = config.defaultGoal;
+    const expectedTotal = daysSinceStart * dailyGoal;
+    const deficit = Math.max(0, expectedTotal - totalThisYear);
+    
+    // Calculate remaining days in year
+    const remainingDays = daysInYear - daysSinceStart;
+    const dailyNeeded = remainingDays > 0 ? Math.ceil((dailyGoal * daysInYear - totalThisYear) / remainingDays) : 0;
+    const yearlyPotential = totalThisYear + (remainingDays * dailyNeeded);
+    
+    res.json({
+      yearlyPotential,
+      totalThisYear,
+      dailyNeeded,
+      remainingDays,
+      deficit,
+      dailyGoal,
+      daysInYear
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/calendar/:exerciseType/:userId/:year/:month - Get calendar data
+app.get('/api/calendar/:exerciseType/:userId/:year/:month', async (req, res) => {
+  try {
+    const { exerciseType, userId, year, month } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    
+    // Get the actual last day of the month
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const startDate = year + '-' + String(month).padStart(2, '0') + '-01';
+    const endDate = year + '-' + String(month).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
+    
+    const result = await pool.query(`
+      SELECT 
+        to_char(timestamp, 'YYYY-MM-DD') as date, 
+        SUM(count) as total
+      FROM ${table} 
+      WHERE user_id = $1 
+      AND to_char(timestamp, 'YYYY-MM-DD') >= $2 
+      AND to_char(timestamp, 'YYYY-MM-DD') <= $3
+      GROUP BY to_char(timestamp, 'YYYY-MM-DD')
+      ORDER BY to_char(timestamp, 'YYYY-MM-DD')
+    `, [userId, startDate, endDate]);
+    
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/leaderboard/:exerciseType - Get leaderboard for specific exercise
+app.get('/api/leaderboard/:exerciseType', async (req, res) => {
+  try {
+    const { exerciseType } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    const today = getBerlinDateString();
+    
+    const result = await pool.query(`
+      SELECT 
+        u.id,
+        u.name,
+        COALESCE(SUM(e.count), 0) as today_total
+      FROM users u
+      LEFT JOIN ${table} e ON u.id = e.user_id 
+        AND to_char(e.timestamp, 'YYYY-MM-DD') = $1
+      GROUP BY u.id, u.name
+      ORDER BY today_total DESC, u.name
+    `, [today]);
+    
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/leaderboard/combined - Get combined leaderboard across all exercises
+app.get('/api/leaderboard/combined', async (req, res) => {
+  try {
+    const today = getBerlinDateString();
+    
+    // Get all users
+    const usersResult = await pool.query('SELECT id, name FROM users ORDER BY name');
+    
+    // For each user, get today's total across all exercises
+    const leaderboardPromises = usersResult.rows.map(async (user) => {
+      const exercisePromises = ['pushups', 'squats', 'situps'].map(async (exerciseType) => {
+        const table = getExerciseTable(exerciseType);
+        const result = await pool.query(
+          `SELECT COALESCE(SUM(count), 0) as total 
+           FROM ${table} 
+           WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2`, 
+          [user.id, today]
+        );
+        return parseInt(result.rows[0].total) || 0;
+      });
+      
+      const exerciseTotals = await Promise.all(exercisePromises);
+      const combinedTotal = exerciseTotals.reduce((sum, total) => sum + total, 0);
+      const config = getExerciseConfig();
+      
+      return {
+        id: user.id,
+        name: user.name,
+        today_total: combinedTotal,
+        hasReachedGoal: combinedTotal >= config.combined.defaultGoal,
+        breakdown: {
+          pushups: exerciseTotals[0],
+          squats: exerciseTotals[1], 
+          situps: exerciseTotals[2]
+        }
+      };
+    });
+    
+    const leaderboard = await Promise.all(leaderboardPromises);
+    
+    // Smart sorting: goal achievers by combined total (highest first), others by total
+    leaderboard.sort((a, b) => {
+      if (a.hasReachedGoal && b.hasReachedGoal) {
+        // Both reached goal: sort by total (highest first)
+        return b.today_total - a.today_total;
+      } else if (a.hasReachedGoal && !b.hasReachedGoal) {
+        // A reached goal, B didn't: A wins
+        return -1;
+      } else if (!a.hasReachedGoal && b.hasReachedGoal) {
+        // B reached goal, A didn't: B wins
+        return 1;
+      } else {
+        // Neither reached goal: sort by total (highest first)
+        return b.today_total - a.today_total;
+      }
+    });
+    
+    res.json(leaderboard);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // HTTP Server
 app.listen(PORT, HOST, () => {
   console.log(`HTTP Server running on http://${HOST}:${PORT}`);
@@ -961,10 +1404,10 @@ async function checkForSmartNotifications(triggerUserId, addedCount) {
       u.name,
       COALESCE(SUM(p.count), 0) as total,
       COUNT(p.id) as entries,
-      MIN(p.created_at) as first_entry_time
+      MIN(to_char(p.timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')) as first_entry_time
     FROM users u
     LEFT JOIN pushups p ON u.id = p.user_id 
-      AND DATE(p.created_at AT TIME ZONE 'Europe/Berlin') = $1
+      AND to_char(p.timestamp, 'YYYY-MM-DD') = $1
     GROUP BY u.id, u.name
     ORDER BY total DESC, first_entry_time ASC
   `, [berlinDate]);

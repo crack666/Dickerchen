@@ -18,6 +18,42 @@ let userName = localStorage.getItem('userName') || null;
 let previousUserId = null; // Track previous user for cleanup decisions
 let dailyGoal = 100;
 
+// Exercise state management
+let currentExercise = localStorage.getItem('currentExercise') || 'pushups';
+let currentPushups = 0;
+
+// Exercise configuration
+const exerciseConfig = {
+  pushups: {
+    name: 'Push-ups',
+    emoji: '💪',
+    strongImage: 'pushup_strong.png',
+    weakImage: 'pushup_weak.png',
+    defaultGoal: 40
+  },
+  squats: {
+    name: 'Squats', 
+    emoji: '🦵',
+    strongImage: 'squats_strong.png',
+    weakImage: 'squats1_weak.png',
+    defaultGoal: 30
+  },
+  situps: {
+    name: 'Sit-ups',
+    emoji: '🏋️',
+    strongImage: 'siutps_strong.png', 
+    weakImage: 'situps1_weak.png',
+    defaultGoal: 30
+  },
+  combined: {
+    name: 'Combined',
+    emoji: '🎯',
+    strongImage: null,
+    weakImage: null,
+    defaultGoal: 100
+  }
+};
+
 // Emoji celebration function - defined globally
 function createEmojiCelebration(count) {
   // Detect if we're on mobile/small screen
@@ -74,8 +110,164 @@ function createEmojiCelebration(count) {
   }
 }
 
+// Exercise switching functions
+function switchExercise(exerciseType) {
+  console.log(`🔄 Switching to exercise: ${exerciseType}`);
+  
+  currentExercise = exerciseType;
+  localStorage.setItem('currentExercise', exerciseType);
+  
+  updateExerciseUI();
+  loadProgress(); // Reload data for new exercise
+}
+
+function updateExerciseUI() {
+  const config = exerciseConfig[currentExercise];
+  
+  // Update title
+  const titleEl = document.getElementById('exercise-title');
+  if (titleEl) {
+    titleEl.textContent = `${config.emoji} ${config.name}`;
+  }
+  
+  // Update progress title
+  const progressTitleEl = document.getElementById('progress-title');
+  if (progressTitleEl) {
+    if (currentExercise === 'combined') {
+      progressTitleEl.textContent = 'Dein Fortschritt heute: Alle Übungen';
+    } else {
+      progressTitleEl.textContent = `Dein Fortschritt heute: ${config.name}`;
+    }
+  }
+  
+  // Update active switcher button
+  document.querySelectorAll('.exercise-btn').forEach(btn => {
+    btn.classList.remove('active', 'current-exercise');
+    if (btn.dataset.exercise === currentExercise) {
+      btn.classList.add('active', 'current-exercise');
+    }
+  });
+  
+  // Update combined button active state
+  const combinedBtn = document.getElementById('combined-btn');
+  if (combinedBtn) {
+    if (currentExercise === 'combined') {
+      combinedBtn.classList.add('active');
+    } else {
+      combinedBtn.classList.remove('active');
+    }
+  }
+  
+  // Update goal based on current exercise
+  if (currentExercise === 'combined') {
+    dailyGoal = config.defaultGoal; // 100 for combined
+  } else {
+    dailyGoal = config.defaultGoal; // Individual goals (40, 30, 30)
+  }
+  
+  // Update visual elements
+  updateExerciseImages();
+  updateAddButtonImages();
+  
+  console.log(`🎯 Updated daily goal to: ${dailyGoal} for ${currentExercise}`);
+}
+
+// Update exercise images based on progress and context
+async function updateExerciseImages(allExerciseData = null) {
+  // If no data provided, fetch current progress for all exercises
+  if (!allExerciseData && userId) {
+    try {
+      const response = await fetch(`${API_BASE}/exercises/combined/${userId}`);
+      allExerciseData = await response.json();
+    } catch (error) {
+      console.warn('Could not fetch exercise data for image updates:', error);
+      return;
+    }
+  }
+  
+  document.querySelectorAll('.exercise-btn').forEach(btn => {
+    const exerciseType = btn.dataset.exercise;
+    const config = exerciseConfig[exerciseType];
+    const img = btn.querySelector('.exercise-icon');
+    
+    if (config && img && allExerciseData) {
+      // Calculate total for this specific exercise type
+      let exerciseTotal = 0;
+      if (allExerciseData[exerciseType]) {
+        exerciseTotal = Array.isArray(allExerciseData[exerciseType]) 
+          ? allExerciseData[exerciseType].reduce((sum, item) => sum + item.count, 0)
+          : 0;
+      }
+      
+      // Check if daily goal is reached for THIS specific exercise
+      const exerciseGoal = config.defaultGoal;
+      const goalReached = exerciseTotal >= exerciseGoal;
+      
+      // Use strong image if goal is reached, otherwise weak
+      const imageSrc = (goalReached && config.strongImage) ? config.strongImage : config.weakImage;
+      
+      if (imageSrc && img.src !== imageSrc) {
+        img.src = imageSrc;
+        console.log(`🖼️ Updated ${exerciseType} image to ${imageSrc} (${exerciseTotal}/${exerciseGoal} - goal reached: ${goalReached})`);
+      }
+    }
+  });
+}
+
+// Update add-button images based on current exercise and count
+function updateAddButtonImages() {
+  const config = exerciseConfig[currentExercise];
+  
+  document.querySelectorAll('.add-btn').forEach(btn => {
+    const count = parseInt(btn.dataset.count);
+    
+    if (config && config.strongImage) {
+      // Remove existing content and create new structure
+      btn.innerHTML = '';
+      
+      // Create image element that fills the whole button
+      const imgElement = document.createElement('img');
+      imgElement.src = config.strongImage;
+      imgElement.alt = config.name;
+      imgElement.classList.add('add-btn-icon');
+      
+      // Create text overlay element
+      const textSpan = document.createElement('span');
+      textSpan.textContent = `+${count}`;
+      
+      // Add both elements (image as background, text as overlay)
+      btn.appendChild(imgElement);
+      btn.appendChild(textSpan);
+      
+      console.log(`🖼️ Updated add-button ${count} with full-size image: ${config.strongImage}`);
+    }
+  });
+}
+
+function setupExerciseSwitcher() {
+  // Handle exercise switcher buttons
+  document.querySelectorAll('.exercise-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const exerciseType = btn.dataset.exercise;
+      switchExercise(exerciseType);
+    });
+  });
+  
+  // Handle combined button in header
+  const combinedBtn = document.getElementById('combined-btn');
+  if (combinedBtn) {
+    combinedBtn.addEventListener('click', () => {
+      switchExercise('combined');
+    });
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await initializeUser();
+  
+  // Initialize exercise switcher
+  setupExerciseSwitcher();
+  updateExerciseUI(); // Set initial UI state
 
   // Tab switching
   document.getElementById('tab-today').addEventListener('click', () => switchTab('today'));
@@ -169,7 +361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update both progress fill and slider position
   function updateSliderDisplay() {
     const sliderValue = parseInt(progressSlider.value);
-    const progress = (sliderValue / dailyGoal) * 100;
+    const progress = Math.min((sliderValue / dailyGoal) * 100, 100); // Cap at 100%
     
     // Update progress fill to match slider
     progressFill.style.width = `${progress}%`;
@@ -522,6 +714,21 @@ async function createOrLoginUser(name) {
   loadLeaderboard();
 }
 
+function updateCombinedBreakdown(breakdown) {
+  // Add breakdown display to show individual exercise progress
+  // This could be shown in the motivation text or a separate area
+  const motivationEl = document.getElementById('motivation');
+  if (motivationEl && breakdown) {
+    const parts = [];
+    Object.entries(breakdown).forEach(([exercise, data]) => {
+      const config = exerciseConfig[exercise];
+      const icon = data.hasReachedGoal ? '✅' : '⏳';
+      parts.push(`${config.emoji} ${data.total}/${data.goal} ${icon}`);
+    });
+    motivationEl.textContent = parts.join(' | ');
+  }
+}
+
 async function loadProgress() {
   if (!userId) {
     // Show default progress for non-logged users
@@ -531,21 +738,39 @@ async function loadProgress() {
     return;
   }
   
-  console.log('🔄 loadProgress called for userId:', userId);
+  console.log('🔄 loadProgress called for userId:', userId, 'exercise:', currentExercise);
   
-  const response = await fetch(`${API_BASE}/pushups/${userId}`);
-  const data = await response.json();
+  let response, data;
   
-  console.log('📊 loadProgress received data:', data);
-  
-  // Store current total for slider functionality - CRITICAL: Do this FIRST
-  window.currentPushups = data.total;
-  
-  updateProgressDisplay(data.total);
+  if (currentExercise === 'combined') {
+    // Load combined data
+    response = await fetch(`${API_BASE}/exercises/combined/${userId}`);
+    data = await response.json();
+    
+    console.log('📊 Combined data received:', data);
+    
+    // Store current total for slider functionality
+    window.currentPushups = data.combinedTotal;
+    
+    updateProgressDisplay(data.combinedTotal);
+    updateCombinedBreakdown(data.breakdown);
+    
+  } else {
+    // Load individual exercise data
+    response = await fetch(`${API_BASE}/exercises/${currentExercise}/${userId}`);
+    data = await response.json();
+    
+    console.log('📊 Individual exercise data received:', data);
+    
+    const total = Array.isArray(data) ? data.reduce((sum, item) => sum + item.count, 0) : 0;
+    
+    // Store current total for slider functionality
+    window.currentPushups = total;
+    
+    updateProgressDisplay(total);
+  }
   
   // Initialize slider AFTER we have the correct currentPushups value
-  // Use setTimeout to ensure DOM is ready and values are set
-  // Only initialize if not already initialized to prevent multiple calls
   if (typeof window.initializeSlider === 'function') {
     console.log('🎯 Calling initializeSlider with currentPushups:', window.currentPushups);
     window.initializeSlider();
@@ -555,20 +780,27 @@ async function loadProgress() {
   
   // Show share button if user has made progress
   const shareBtn = document.getElementById('share-progress');
-  if (data.total > 0) {
+  if (window.currentPushups > 0) {
     shareBtn.style.display = 'block';
-    shareBtn.onclick = () => shareProgress(data.total);
+    shareBtn.onclick = () => shareProgress(window.currentPushups);
   } else {
     shareBtn.style.display = 'none';
   }
   
   // Update motivation message
   updateMotivation(data.total);
+  
+  // Update exercise images based on progress - pass the full data for combined, null for individual
+  if (currentExercise === 'combined') {
+    updateExerciseImages(data); // data already contains all exercise breakdowns
+  } else {
+    updateExerciseImages(); // will fetch combined data internally
+  }
 }
 
 function updateProgressDisplay(total = null) {
   const currentTotal = total !== null ? total : getCurrentPushups();
-  const progress = (currentTotal / dailyGoal) * 100;
+  const progress = Math.min((currentTotal / dailyGoal) * 100, 100); // Cap at 100%
   document.getElementById('progress-fill').style.width = `${progress}%`;
   document.getElementById('progress-text').textContent = `${currentTotal} / ${dailyGoal}`;
 }
@@ -619,7 +851,13 @@ function shareProgress(total) {
 }
 
 async function addPushup(count = 1) {
-  console.log(`🚀 addPushup called with count: ${count}, userId: ${userId}`);
+  console.log(`🚀 addPushup called with count: ${count}, userId: ${userId}, exercise: ${currentExercise}`);
+  
+  // Don't allow adding to combined view
+  if (currentExercise === 'combined') {
+    alert('Bitte wähle eine spezifische Übung aus, um sie hinzuzufügen!');
+    return;
+  }
   
   // Prevent multiple simultaneous requests
   if (window.isAddingPushup) {
@@ -630,16 +868,16 @@ async function addPushup(count = 1) {
   window.isAddingPushup = true;
   
   try {
-    const response = await fetch(`${API_BASE}/pushups`, {
+    const response = await fetch(`${API_BASE}/exercises/${currentExercise}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, count })
     });
     
-    console.log(`📡 addPushup response status: ${response.status}`);
+    console.log(`📡 add${currentExercise} response status: ${response.status}`);
     
     if (response.ok) {
-      console.log('✅ addPushup successful, reloading data...');
+      console.log(`✅ add${currentExercise} successful, reloading data...`);
       
       // Update data in sequence to avoid race conditions
       await loadProgress();
@@ -650,14 +888,14 @@ async function addPushup(count = 1) {
       // 🎉 Create emoji celebration!
       createEmojiCelebration(count);
     } else {
-      console.error('❌ Failed to add pushups, response:', response);
+      console.error(`❌ Failed to add ${currentExercise}, response:`, response);
       // Reset slider on error
       if (typeof resetSlider === 'function') {
         resetSlider();
       }
     }
   } catch (error) {
-    console.error('❌ addPushup error:', error);
+    console.error(`❌ add${currentExercise} error:`, error);
   } finally {
     window.isAddingPushup = false;
   }
@@ -885,17 +1123,54 @@ async function openUserModal(user) {
   document.getElementById('modal-progress').textContent = `Heutige Dicke: ${user.total}`;
   document.getElementById('modal-log-title').textContent = 'Protokoll heute:';
   
-  // Load detailed log
-  const response = await fetch(`${API_BASE}/pushups/${user.id}`);
+  // Load detailed log from combined exercises endpoint
+  const response = await fetch(`${API_BASE}/exercises/combined/${user.id}/details`);
   const data = await response.json();
+  console.log('🔍 Modal data received:', data); // Debug log
   const logList = document.getElementById('modal-log');
   logList.innerHTML = '';
   
-  data.pushups.forEach(pushup => {
+  // Combine all exercises from today
+  const allExercises = [];
+  if (data.pushups && data.pushups.length > 0) allExercises.push(...data.pushups.map(p => ({...p, type: 'pushups'})));
+  if (data.squats && data.squats.length > 0) allExercises.push(...data.squats.map(s => ({...s, type: 'squats'})));
+  if (data.situps && data.situps.length > 0) allExercises.push(...data.situps.map(s => ({...s, type: 'situps'})));
+  
+  console.log('🔍 All exercises combined:', allExercises); // Debug log
+  
+  // Sort by timestamp
+  allExercises.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  
+  // Check if user has any exercises today
+  if (allExercises.length === 0) {
+    const emptyLi = document.createElement('li');
+    emptyLi.innerHTML = `
+      <div class="exercise-log-entry" style="text-align: center; color: #888; font-style: italic;">
+        Heute noch keine Übungen gemacht 🤷‍♂️
+      </div>
+    `;
+    logList.appendChild(emptyLi);
+  } else {
+    allExercises.forEach(exercise => {
     const li = document.createElement('li');
     // Extract time directly from Berlin timestamp
-    const timestamp = pushup.timestamp;
+    const timestamp = exercise.timestamp;
     const timePart = timestamp.substring(11, 16);
+    
+    // Get exercise name and emoji
+    const exerciseNames = {
+      'pushups': 'Push-ups',
+      'squats': 'Kniebeugen', 
+      'situps': 'Sit-ups'
+    };
+    const exerciseEmojis = {
+      'pushups': '💪',
+      'squats': '🦵',
+      'situps': '🏃'
+    };
+    
+    const exerciseName = exerciseNames[exercise.type] || exercise.type;
+    const exerciseEmoji = exerciseEmojis[exercise.type] || '💪';
     
     // Check if this is the current user's own profile
     const isOwnProfile = userId && user.id == userId;
@@ -903,37 +1178,51 @@ async function openUserModal(user) {
     if (isOwnProfile) {
       // User can delete their own entries
       li.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0;">
-          <span>${timePart}: ${pushup.count} Dicke</span>
-          <button class="delete-pushup-btn" data-pushup-id="${pushup.id}" style="
-            background: #ff4444; 
-            color: white; 
-            border: none; 
-            border-radius: 4px; 
-            padding: 4px 8px; 
-            cursor: pointer; 
-            font-size: 12px;
-            margin-left: 10px;
-          ">🗑️</button>
+        <div class="exercise-log-entry">
+          <div class="exercise-info">
+            <span class="exercise-time">${timePart}</span>
+            <span class="exercise-details">${exercise.count} ${exerciseName}</span>
+            <span style="font-size: 16px;">${exerciseEmoji}</span>
+          </div>
+          <button class="delete-exercise-btn" data-exercise-id="${exercise.id}" data-exercise-type="${exercise.type}">
+            🗑️
+          </button>
         </div>
       `;
     } else {
       // Other users' profiles - no delete button
-      li.innerHTML = `<span>${timePart}: ${pushup.count} Dicke</span>`;
+      li.innerHTML = `
+        <div class="exercise-log-entry">
+          <div class="exercise-info">
+            <span class="exercise-time">${timePart}</span>
+            <span class="exercise-details">${exercise.count} ${exerciseName}</span>
+            <span style="font-size: 16px;">${exerciseEmoji}</span>
+          </div>
+        </div>
+      `;
     }
     
     logList.appendChild(li);
-  });
+    });
+  }
   
   // Add event listeners for delete buttons
-  document.querySelectorAll('.delete-pushup-btn').forEach(btn => {
+  document.querySelectorAll('.delete-exercise-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const pushupId = btn.dataset.pushupId;
+      const exerciseId = btn.dataset.exerciseId;
+      const exerciseType = btn.dataset.exerciseType;
       
-      if (confirm('Möchtest du diesen Push-up-Satz wirklich löschen?')) {
+      const exerciseNames = {
+        'pushups': 'Push-up',
+        'squats': 'Kniebeuge', 
+        'situps': 'Sit-up'
+      };
+      const exerciseName = exerciseNames[exerciseType] || exerciseType;
+      
+      if (confirm(`Möchtest du diesen ${exerciseName}-Satz wirklich löschen?`)) {
         try {
-          const deleteResponse = await fetch(`${API_BASE}/pushups/${pushupId}`, {
+          const deleteResponse = await fetch(`${API_BASE}/exercises/${exerciseType}/${exerciseId}`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId })
@@ -1109,12 +1398,9 @@ async function loadCalendar(userId) {
 async function showDayDetails(dateStr, total, dayData) {
   if (!currentCalendarUserId) return;
   
-  // Get detailed pushup data for this specific date using the new API
-  const detailResponse = await fetch(`${API_BASE}/pushups/${currentCalendarUserId}/date/${dateStr}`);
-  const dayPushupsData = await detailResponse.json();
-  
-  // Use the pushups from the specific date API
-  const dayPushups = dayPushupsData.pushups || [];
+  // Get detailed exercise data for this specific date
+  const detailResponse = await fetch(`${API_BASE}/calendar/${currentCalendarUserId}/date/${dateStr}`);
+  const dayDetailsData = await detailResponse.json();
   
   // Get user name
   const userResponse = await fetch(`${API_BASE}/users`);
@@ -1130,8 +1416,17 @@ async function showDayDetails(dateStr, total, dayData) {
     day: 'numeric'
   });
   
-  // Use the total from the specific date API instead of the calendar data
-  const actualTotal = dayPushupsData.total || 0;
+  // Combine all exercises from that day
+  const allDayExercises = [];
+  if (dayDetailsData.pushups) allDayExercises.push(...dayDetailsData.pushups.map(p => ({...p, type: 'pushups'})));
+  if (dayDetailsData.squats) allDayExercises.push(...dayDetailsData.squats.map(s => ({...s, type: 'squats'})));
+  if (dayDetailsData.situps) allDayExercises.push(...dayDetailsData.situps.map(s => ({...s, type: 'situps'})));
+  
+  // Sort by timestamp
+  allDayExercises.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  
+  // Calculate total
+  const actualTotal = allDayExercises.reduce((sum, ex) => sum + ex.count, 0);
   
   // Show in modal
   document.getElementById('modal-name').textContent = `${userName} - ${displayDate}`;
@@ -1149,15 +1444,50 @@ async function showDayDetails(dateStr, total, dayData) {
   document.getElementById('modal-log-title').textContent = 'Einzelne Sets:';
   
   const logList = document.getElementById('modal-log');
-  if (dayPushups.length === 0) {
-    logList.innerHTML = '<p style="color: #666; font-style: italic;">Keine Push-ups an diesem Tag</p>';
+  logList.innerHTML = '';
+  
+  if (allDayExercises.length === 0) {
+    const emptyLi = document.createElement('li');
+    emptyLi.innerHTML = `
+      <div class="exercise-log-entry" style="text-align: center; color: #888; font-style: italic;">
+        Keine Übungen an diesem Tag 🤷‍♂️
+      </div>
+    `;
+    logList.appendChild(emptyLi);
   } else {
-    logList.innerHTML = dayPushups.map(p => {
-      // Extract time directly from Berlin timestamp (already converted by backend)
-      const timestamp = p.timestamp; // Format: "2025-09-05T22:36:11.534Z"
-      const timePart = timestamp.substring(11, 16); // Extract "22:36"
-      return `<p><strong>${p.count}</strong> Push-ups um <strong>${timePart}</strong></p>`;
-    }).join('');
+    allDayExercises.forEach(exercise => {
+      const li = document.createElement('li');
+      // Extract time directly from Berlin timestamp
+      const timestamp = exercise.timestamp;
+      const timePart = timestamp.substring(11, 16);
+      
+      // Get exercise name and emoji
+      const exerciseNames = {
+        'pushups': 'Push-ups',
+        'squats': 'Kniebeugen', 
+        'situps': 'Sit-ups'
+      };
+      const exerciseEmojis = {
+        'pushups': '💪',
+        'squats': '🦵',
+        'situps': '🏃'
+      };
+      
+      const exerciseName = exerciseNames[exercise.type] || exercise.type;
+      const exerciseEmoji = exerciseEmojis[exercise.type] || '💪';
+      
+      li.innerHTML = `
+        <div class="exercise-log-entry">
+          <div class="exercise-info">
+            <span class="exercise-time">${timePart}</span>
+            <span class="exercise-details">${exercise.count} ${exerciseName}</span>
+            <span style="font-size: 16px;">${exerciseEmoji}</span>
+          </div>
+        </div>
+      `;
+      
+      logList.appendChild(li);
+    });
   }
   
   document.getElementById('user-modal').style.display = 'block';
