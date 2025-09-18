@@ -312,7 +312,7 @@ app.get('/api/leaderboard', async (req, res) => {
     const leaderboardData = await Promise.all(users.map(async (user) => {
       // Get today's pushups for this user, ordered by timestamp (Berlin timezone)
       const pushupsResult = await pool.query(
-        'SELECT count, (timestamp AT TIME ZONE \'UTC\' AT TIME ZONE \'Europe/Berlin\') as timestamp FROM pushups WHERE user_id = $1 AND to_char((timestamp AT TIME ZONE \'UTC\' AT TIME ZONE \'Europe/Berlin\'), \'YYYY-MM-DD\') = $2 ORDER BY timestamp ASC',
+        'SELECT count, to_char(timestamp, \'YYYY-MM-DD"T"HH24:MI:SS"Z"\') as timestamp FROM pushups WHERE user_id = $1 AND to_char(timestamp, \'YYYY-MM-DD\') = $2 ORDER BY timestamp ASC',
         [user.id, todayStr]
       );
 
@@ -379,9 +379,9 @@ app.post('/api/pushups', async (req, res) => {
   try {
     const { userId, count } = req.body;
     
-    // Use explicit Berlin timezone timestamp for consistency
+    // Store Berlin timezone timestamp (consistent with display)
     const result = await pool.query(
-      'INSERT INTO pushups (user_id, count, timestamp) VALUES ($1, $2, NOW() AT TIME ZONE \'Europe/Berlin\') RETURNING *', 
+      'INSERT INTO pushups (user_id, count, timestamp) VALUES ($1, $2, NOW() AT TIME ZONE \'Europe/Berlin\') RETURNING id, user_id, count, to_char(timestamp, \'YYYY-MM-DD"T"HH24:MI:SS"Z"\') as timestamp', 
       [userId, count]
     );
     
@@ -448,10 +448,10 @@ app.get('/api/pushups/:userId', async (req, res) => {
         id,
         user_id,
         count,
-        (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as timestamp
+        to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp
       FROM pushups
       WHERE user_id = $1
-      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
+      AND to_char(timestamp, 'YYYY-MM-DD') = $2
       ORDER BY timestamp ASC
     `, [req.params.userId, todayStr]);
 
@@ -480,10 +480,10 @@ app.get('/api/pushups/:userId/date/:date', async (req, res) => {
         id,
         user_id,
         count,
-        (timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as timestamp
+        to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp
       FROM pushups 
       WHERE user_id = $1 
-      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') = $2
+      AND to_char(timestamp, 'YYYY-MM-DD') = $2
       ORDER BY timestamp ASC
     `, [userId, date]);
     
@@ -509,7 +509,7 @@ app.get('/api/pushups/:userId/yearly-potential', async (req, res) => {
 
     // Get the date of the first pushup for this user
     const firstPushupResult = await pool.query(`
-      SELECT MIN(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin') as first_date
+      SELECT MIN(timestamp) as first_date
       FROM pushups 
       WHERE user_id = $1
     `, [userId]);
@@ -568,13 +568,13 @@ app.get('/api/pushups/:userId/calendar', async (req, res) => {
     const endDate = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
     
     const result = await pool.query(`
-      SELECT to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, SUM(count) as total
+      SELECT to_char(timestamp, 'YYYY-MM-DD') as date, SUM(count) as total
       FROM pushups 
       WHERE user_id = $1 
-      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
-      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
-      GROUP BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
-      ORDER BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      AND to_char(timestamp, 'YYYY-MM-DD') >= $2 
+      AND to_char(timestamp, 'YYYY-MM-DD') <= $3
+      GROUP BY to_char(timestamp, 'YYYY-MM-DD')
+      ORDER BY to_char(timestamp, 'YYYY-MM-DD')
     `, [req.params.userId, startDate, endDate]);
     
     res.json(result.rows);
@@ -595,14 +595,14 @@ app.get('/api/calendar/:userId/:year/:month', async (req, res) => {
     
     const result = await pool.query(`
       SELECT 
-        to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') as date, 
+        to_char(timestamp, 'YYYY-MM-DD') as date, 
         SUM(count) as total
       FROM pushups 
       WHERE user_id = $1 
-      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') >= $2 
-      AND to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD') <= $3
-      GROUP BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
-      ORDER BY to_char((timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Berlin'), 'YYYY-MM-DD')
+      AND to_char(timestamp, 'YYYY-MM-DD') >= $2 
+      AND to_char(timestamp, 'YYYY-MM-DD') <= $3
+      GROUP BY to_char(timestamp, 'YYYY-MM-DD')
+      ORDER BY to_char(timestamp, 'YYYY-MM-DD')
     `, [userId, startDate, endDate]);
     
     res.json(result.rows);
