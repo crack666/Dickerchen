@@ -445,7 +445,50 @@ app.post('/api/pushups', async (req, res) => {
   }
 });
 
-// Delete a specific pushup entry (only owner can delete)
+// DELETE /api/exercises/:exerciseType/:exerciseId - Delete a specific exercise entry
+app.delete('/api/exercises/:exerciseType/:exerciseId', async (req, res) => {
+  try {
+    const { exerciseType, exerciseId } = req.params;
+    const { userId } = req.body; // User ID for ownership verification
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    
+    // First verify that the exercise belongs to the requesting user
+    const ownershipCheck = await pool.query(
+      `SELECT user_id FROM ${table} WHERE id = $1`,
+      [exerciseId]
+    );
+    
+    if (ownershipCheck.rows.length === 0) {
+      return res.status(404).json({ error: `${exerciseType} entry not found` });
+    }
+    
+    if (ownershipCheck.rows[0].user_id != userId) {
+      return res.status(403).json({ error: `You can only delete your own ${exerciseType} entries` });
+    }
+    
+    // Delete the exercise entry
+    const result = await pool.query(
+      `DELETE FROM ${table} WHERE id = $1 RETURNING *`,
+      [exerciseId]
+    );
+    
+    res.json({ 
+      success: true, 
+      deleted: result.rows[0],
+      message: `${exerciseType} entry deleted successfully` 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a specific pushup entry (only owner can delete) - LEGACY ROUTE
 app.delete('/api/pushups/:pushupId', async (req, res) => {
   try {
     const { pushupId } = req.params;
@@ -1284,37 +1327,6 @@ app.get('/api/calendar/:exerciseType/:userId/:year/:month', async (req, res) => 
   }
 });
 
-// GET /api/leaderboard/:exerciseType - Get leaderboard for specific exercise
-app.get('/api/leaderboard/:exerciseType', async (req, res) => {
-  try {
-    const { exerciseType } = req.params;
-    
-    // Validate exercise type
-    if (!validateExerciseType(exerciseType)) {
-      return res.status(400).json({ error: 'Invalid exercise type' });
-    }
-    
-    const table = getExerciseTable(exerciseType);
-    const today = getBerlinDateString();
-    
-    const result = await pool.query(`
-      SELECT 
-        u.id,
-        u.name,
-        COALESCE(SUM(e.count), 0) as today_total
-      FROM users u
-      LEFT JOIN ${table} e ON u.id = e.user_id 
-        AND to_char(e.timestamp, 'YYYY-MM-DD') = $1
-      GROUP BY u.id, u.name
-      ORDER BY today_total DESC, u.name
-    `, [today]);
-    
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // GET /api/leaderboard/combined - Get combined leaderboard across all exercises
 app.get('/api/leaderboard/combined', async (req, res) => {
   try {
@@ -1373,6 +1385,37 @@ app.get('/api/leaderboard/combined', async (req, res) => {
     });
     
     res.json(leaderboard);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/leaderboard/:exerciseType - Get leaderboard for specific exercise
+app.get('/api/leaderboard/:exerciseType', async (req, res) => {
+  try {
+    const { exerciseType } = req.params;
+    
+    // Validate exercise type
+    if (!validateExerciseType(exerciseType)) {
+      return res.status(400).json({ error: 'Invalid exercise type' });
+    }
+    
+    const table = getExerciseTable(exerciseType);
+    const today = getBerlinDateString();
+    
+    const result = await pool.query(`
+      SELECT 
+        u.id,
+        u.name,
+        COALESCE(SUM(e.count), 0) as today_total
+      FROM users u
+      LEFT JOIN ${table} e ON u.id = e.user_id 
+        AND to_char(e.timestamp, 'YYYY-MM-DD') = $1
+      GROUP BY u.id, u.name
+      ORDER BY today_total DESC, u.name
+    `, [today]);
+    
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

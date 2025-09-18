@@ -2,7 +2,9 @@
 // API Base URL - simplified for local development
 const API_BASE = window.location.hostname === 'dickerchen.fly.dev'
   ? `${window.location.protocol}//${window.location.host}/api`
-  : '/api';  // Use relative URLs for local development
+  : window.location.port === '3001' 
+    ? '/api'  // Backend serves frontend on 3001
+    : 'http://localhost:3001/api';  // Frontend on different port
 
 console.log('🔗 API_BASE URL:', API_BASE);
 console.log('🌐 Window location:', window.location.href);
@@ -903,20 +905,20 @@ async function addPushup(count = 1) {
 
 async function loadLeaderboard() {
   try {
-    // Try new leaderboard endpoint first (backward compatible approach)
-    const response = await fetch(`${API_BASE}/leaderboard`);
+    // Use combined leaderboard endpoint that sums all exercises
+    const response = await fetch(`${API_BASE}/leaderboard/combined`);
     
     if (response.ok) {
-      // Use new backend-calculated leaderboard
+      // Use new backend-calculated combined leaderboard
       const userProgress = await response.json();
       renderLeaderboard(userProgress);
     } else {
       // Fallback to old logic if new endpoint not available
-      console.log('New leaderboard endpoint not available, falling back to old logic');
+      console.log('Combined leaderboard endpoint not available, falling back to old logic');
       await loadLeaderboardFallback();
     }
   } catch (error) {
-    console.log('Error loading new leaderboard, falling back to old logic:', error);
+    console.log('Error loading combined leaderboard, falling back to old logic:', error);
     await loadLeaderboardFallback();
   }
 }
@@ -983,6 +985,9 @@ function renderLeaderboard(userProgress) {
     const li = document.createElement('li');
     li.className = userId && user.id == userId ? 'you' : '';
     
+    // Use today_total from combined endpoint or fall back to total for legacy
+    const userTotal = user.today_total !== undefined ? user.today_total : user.total;
+    
     // Add visual indicator for goal achievement
     let achievementIcon = '';
     if (user.hasReachedGoal) {
@@ -993,6 +998,7 @@ function renderLeaderboard(userProgress) {
       }
     }
     
+    // Time info handling for both formats
     let timeInfo = '';
     if (user.hasReachedGoal && user.goalReachedAt) {
       // Extract time directly from Berlin timestamp
@@ -1001,9 +1007,22 @@ function renderLeaderboard(userProgress) {
       timeInfo = ` (um ${timePart})`;
     }
     
+    // Show breakdown tooltip for combined leaderboard
+    let breakdownInfo = '';
+    if (user.breakdown) {
+      const { pushups, squats, situps } = user.breakdown;
+      if (pushups > 0 || squats > 0 || situps > 0) {
+        const parts = [];
+        if (pushups > 0) parts.push(`💪 ${pushups}`);
+        if (squats > 0) parts.push(`🦵 ${squats}`);
+        if (situps > 0) parts.push(`🏋️ ${situps}`);
+        breakdownInfo = ` (${parts.join(', ')})`;
+      }
+    }
+    
     li.innerHTML = `
       <span class="rank">${index + 1}. ${user.name} ${userId && user.id == userId ? '(Du)' : ''}${achievementIcon}</span>
-      <span class="score">${user.total} Dicke${timeInfo}</span>
+      <span class="score">${userTotal} Dicke${breakdownInfo}${timeInfo}</span>
     `;
     li.addEventListener('click', () => openUserModal(user));
     leaderboardList.appendChild(li);
