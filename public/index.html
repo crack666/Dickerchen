@@ -92,6 +92,27 @@
           <div id="modal-progress"></div>
           <h3 id="modal-log-title">Protokoll heute:</h3>
           <ul id="modal-log"></ul>
+          
+          <!-- Goals Section (only shown for current user) -->
+          <div id="modal-goals-section" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+            <h3>🎯 Deine persönlichen Ziele</h3>
+            <div id="modal-goals-form">
+              <div class="goal-input-group">
+                <label>💪 Push-ups pro Tag:</label>
+                <input type="number" id="goal-pushups" min="1" max="1000" />
+              </div>
+              <div class="goal-input-group">
+                <label>🦵 Squats pro Tag:</label>
+                <input type="number" id="goal-squats" min="1" max="1000" />
+              </div>
+              <div class="goal-input-group">
+                <label>🏋️ Sit-ups pro Tag:</label>
+                <input type="number" id="goal-situps" min="1" max="1000" />
+              </div>
+              <button id="save-goals-btn" class="save-goals-btn">💾 Ziele speichern</button>
+            </div>
+          </div>
+          
           <button id="nudge-btn">👉 Anstupsen!</button>
           <button id="debug-btn" style="background: #666; margin-top: 10px;">🔍 Debug Info</button>
           <button id="test-notifications-btn" style="background: #ff9800; margin-top: 10px;">🔔 Test Notifications</button>

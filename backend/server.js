@@ -69,11 +69,50 @@ function validateExerciseType(exerciseType) {
 
 function getExerciseConfig() {
   return {
-    combined: { name: 'Combined', emoji: '🎯', defaultGoal: 100 },
-    pushups: { name: 'Push-ups', emoji: '💪', defaultGoal: 40 },
+    combined: { name: 'Combined', emoji: '🎯', defaultGoal: 180 }, // 100+30+50
+    pushups: { name: 'Push-ups', emoji: '💪', defaultGoal: 100 },
     squats: { name: 'Squats', emoji: '🦵', defaultGoal: 30 },
-    situps: { name: 'Sit-ups', emoji: '🏋️', defaultGoal: 30 }
+    situps: { name: 'Sit-ups', emoji: '🏋️', defaultGoal: 50 }
   };
+}
+
+// Get personalized goal for user and exercise type
+async function getUserGoal(userId, exerciseType) {
+  try {
+    const result = await pool.query(
+      'SELECT daily_goal FROM user_exercise_goals WHERE user_id = $1 AND exercise_type = $2',
+      [userId, exerciseType]
+    );
+    
+    if (result.rows.length > 0) {
+      return result.rows[0].daily_goal;
+    }
+    
+    // Fallback to default goal
+    const config = getExerciseConfig();
+    return config[exerciseType]?.defaultGoal || 100;
+  } catch (error) {
+    console.error('Error getting user goal:', error);
+    const config = getExerciseConfig();
+    return config[exerciseType]?.defaultGoal || 100;
+  }
+}
+
+// Set personalized goal for user and exercise type
+async function setUserGoal(userId, exerciseType, dailyGoal) {
+  try {
+    await pool.query(`
+      INSERT INTO user_exercise_goals (user_id, exercise_type, daily_goal, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (user_id, exercise_type)
+      DO UPDATE SET daily_goal = $3, updated_at = NOW()
+    `, [userId, exerciseType, dailyGoal]);
+    
+    return true;
+  } catch (error) {
+    console.error('Error setting user goal:', error);
+    return false;
+  }
 }
 
 // PostgreSQL connection - Environment-based
@@ -185,6 +224,20 @@ async function initializeDatabase() {
     `);
     console.log('✅ Sit-ups table ready');
     
+    // Create user_exercise_goals table for personalized daily goals
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_exercise_goals (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        exercise_type VARCHAR(20) NOT NULL,
+        daily_goal INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, exercise_type)
+      )
+    `);
+    console.log('✅ User exercise goals table ready');
+
     console.log('✅ Database tables initialized successfully');
   } catch (error) {
     console.error('❌ Error initializing database:', error.message);
@@ -335,6 +388,58 @@ app.get('/api/users', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM users');
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/users/:userId/goals - Get personalized goals for user
+app.get('/api/users/:userId/goals', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const goals = {};
+    for (const exerciseType of ['pushups', 'squats', 'situps']) {
+      goals[exerciseType] = await getUserGoal(userId, exerciseType);
+    }
+    
+    res.json(goals);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/users/:userId/goals - Set personalized goals for user
+app.put('/api/users/:userId/goals', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { pushups, squats, situps } = req.body;
+    
+    // Validate goals
+    const goals = { pushups, squats, situps };
+    for (const [exerciseType, goal] of Object.entries(goals)) {
+      if (goal !== undefined) {
+        if (!Number.isInteger(goal) || goal < 1 || goal > 1000) {
+          return res.status(400).json({ 
+            error: `Invalid goal for ${exerciseType}: must be between 1 and 1000` 
+          });
+        }
+      }
+    }
+    
+    // Set goals
+    const results = {};
+    for (const [exerciseType, goal] of Object.entries(goals)) {
+      if (goal !== undefined) {
+        const success = await setUserGoal(userId, exerciseType, goal);
+        results[exerciseType] = success ? goal : null;
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      goals: results 
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1147,17 +1252,25 @@ app.get('/api/exercises/combined/:userId', async (req, res) => {
     
     const exerciseTotals = await Promise.all(promises);
     const combinedTotal = exerciseTotals.reduce((sum, ex) => sum + ex.total, 0);
-    const config = getExerciseConfig();
+    
+    // Get personalized goals for this user
+    const personalizedGoals = {};
+    let combinedGoal = 0;
+    for (const exerciseType of ['pushups', 'squats', 'situps']) {
+      const goal = await getUserGoal(userId, exerciseType);
+      personalizedGoals[exerciseType] = goal;
+      combinedGoal += goal;
+    }
     
     res.json({
       combinedTotal,
-      dailyGoal: config.combined.defaultGoal,
-      hasReachedGoal: combinedTotal >= config.combined.defaultGoal,
+      dailyGoal: combinedGoal,
+      hasReachedGoal: combinedTotal >= combinedGoal,
       breakdown: exerciseTotals.reduce((acc, ex) => {
         acc[ex.exercise] = {
           total: ex.total,
-          goal: config[ex.exercise].defaultGoal,
-          hasReachedGoal: ex.total >= config[ex.exercise].defaultGoal
+          goal: personalizedGoals[ex.exercise],
+          hasReachedGoal: ex.total >= personalizedGoals[ex.exercise]
         };
         return acc;
       }, {})

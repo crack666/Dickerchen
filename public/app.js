@@ -2,9 +2,7 @@
 // API Base URL - simplified for local development
 const API_BASE = window.location.hostname === 'dickerchen.fly.dev'
   ? `${window.location.protocol}//${window.location.host}/api`
-  : window.location.port === '3001' 
-    ? '/api'  // Backend serves frontend on 3001
-    : 'http://localhost:3001/api';  // Frontend on different port
+  : '/api';  // Use relative URLs for local development
 
 console.log('🔗 API_BASE URL:', API_BASE);
 console.log('🌐 Window location:', window.location.href);
@@ -18,7 +16,7 @@ fetch(API_BASE + '/test')
 let userId = localStorage.getItem('userId') || null;
 let userName = localStorage.getItem('userName') || null;
 let previousUserId = null; // Track previous user for cleanup decisions
-let dailyGoal = 100;
+let dailyGoal = 180; // Default combined goal, will be updated from API
 
 // Exercise state management
 let currentExercise = localStorage.getItem('currentExercise') || 'pushups';
@@ -31,7 +29,7 @@ const exerciseConfig = {
     emoji: '💪',
     strongImage: 'pushup_strong.png',
     weakImage: 'pushup_weak.png',
-    defaultGoal: 40
+    defaultGoal: 100
   },
   squats: {
     name: 'Squats', 
@@ -45,14 +43,14 @@ const exerciseConfig = {
     emoji: '🏋️',
     strongImage: 'siutps_strong.png', 
     weakImage: 'situps1_weak.png',
-    defaultGoal: 30
+    defaultGoal: 50
   },
   combined: {
     name: 'Combined',
     emoji: '🎯',
     strongImage: null,
     weakImage: null,
-    defaultGoal: 100
+    defaultGoal: 180
   }
 };
 
@@ -614,6 +612,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   
   document.body.appendChild(loginBtn);
+
+  // Goals management event listener
+  document.getElementById('save-goals-btn').addEventListener('click', () => {
+    if (userId) {
+      saveUserGoals(userId);
+    }
+  });
 });
 
 async function initializeUser() {
@@ -762,11 +767,14 @@ async function loadProgress() {
     // Store current total for slider functionality
     window.currentPushups = data.combinedTotal;
     
+    // Update global dailyGoal with personalized goal
+    dailyGoal = data.dailyGoal;
+    
     updateProgressDisplay(data.combinedTotal);
     updateCombinedBreakdown(data.breakdown);
     
   } else {
-    // Load individual exercise data
+    // Load individual exercise data first
     response = await fetch(`${API_BASE}/exercises/${currentExercise}/${userId}`);
     data = await response.json();
     
@@ -776,6 +784,16 @@ async function loadProgress() {
     
     // Store current total for slider functionality
     window.currentPushups = total;
+    
+    // Get personalized goal for this specific exercise
+    try {
+      const goalsResponse = await fetch(`${API_BASE}/users/${userId}/goals`);
+      const goals = await goalsResponse.json();
+      dailyGoal = goals[currentExercise] || exerciseConfig[currentExercise].defaultGoal;
+    } catch (error) {
+      console.warn('Could not load personalized goals, using default:', error);
+      dailyGoal = exerciseConfig[currentExercise].defaultGoal;
+    }
     
     updateProgressDisplay(total);
   }
@@ -1153,6 +1171,18 @@ async function openUserModal(user) {
   document.getElementById('modal-progress').textContent = `Heutige Dicke: ${userTotal}`;
   document.getElementById('modal-log-title').textContent = 'Protokoll heute:';
   
+  // Show/hide goals section only for current user
+  const goalsSection = document.getElementById('modal-goals-section');
+  const isOwnProfile = userId && user.id == userId;
+  
+  if (isOwnProfile) {
+    goalsSection.style.display = 'block';
+    // Load and display current goals
+    await loadUserGoals(user.id);
+  } else {
+    goalsSection.style.display = 'none';
+  }
+  
   // Load detailed log from combined exercises endpoint
   const response = await fetch(`${API_BASE}/exercises/combined/${user.id}/details`);
   const data = await response.json();
@@ -1279,6 +1309,91 @@ async function openUserModal(user) {
   nudgeBtn.onclick = () => nudgeUser(user);
   
   document.getElementById('user-modal').style.display = 'block';
+}
+
+// Load user's personalized goals
+async function loadUserGoals(userId) {
+  try {
+    const response = await fetch(`${API_BASE}/users/${userId}/goals`);
+    const goals = await response.json();
+    
+    // Populate input fields
+    document.getElementById('goal-pushups').value = goals.pushups || exerciseConfig.pushups.defaultGoal;
+    document.getElementById('goal-squats').value = goals.squats || exerciseConfig.squats.defaultGoal;
+    document.getElementById('goal-situps').value = goals.situps || exerciseConfig.situps.defaultGoal;
+    
+    console.log('🎯 Loaded user goals:', goals);
+  } catch (error) {
+    console.error('Error loading user goals:', error);
+    // Set defaults on error
+    document.getElementById('goal-pushups').value = exerciseConfig.pushups.defaultGoal;
+    document.getElementById('goal-squats').value = exerciseConfig.squats.defaultGoal;
+    document.getElementById('goal-situps').value = exerciseConfig.situps.defaultGoal;
+  }
+}
+
+// Save user's personalized goals
+async function saveUserGoals(userId) {
+  const saveBtn = document.getElementById('save-goals-btn');
+  const originalText = saveBtn.textContent;
+  
+  try {
+    saveBtn.disabled = true;
+    saveBtn.textContent = '💾 Speichere...';
+    
+    const goals = {
+      pushups: parseInt(document.getElementById('goal-pushups').value),
+      squats: parseInt(document.getElementById('goal-squats').value),
+      situps: parseInt(document.getElementById('goal-situps').value)
+    };
+    
+    // Validate goals
+    for (const [exercise, goal] of Object.entries(goals)) {
+      if (!Number.isInteger(goal) || goal < 1 || goal > 1000) {
+        throw new Error(`${exercise}: Ziel muss zwischen 1 und 1000 liegen`);
+      }
+    }
+    
+    const response = await fetch(`${API_BASE}/users/${userId}/goals`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(goals)
+    });
+    
+    if (!response.ok) {
+      throw new Error('Fehler beim Speichern der Ziele');
+    }
+    
+    const result = await response.json();
+    console.log('🎯 Goals saved:', result);
+    
+    // Show success feedback
+    saveBtn.textContent = '✅ Gespeichert!';
+    saveBtn.style.background = '#4CAF50';
+    
+    // Refresh progress to reflect new goals
+    await loadProgress();
+    await updateExerciseImages();
+    
+    // Reset button after 2 seconds
+    setTimeout(() => {
+      saveBtn.textContent = originalText;
+      saveBtn.style.background = '#4CAF50';
+      saveBtn.disabled = false;
+    }, 2000);
+    
+  } catch (error) {
+    console.error('Error saving goals:', error);
+    saveBtn.textContent = `❌ ${error.message}`;
+    saveBtn.style.background = '#f44336';
+    
+    // Reset button after 3 seconds
+    setTimeout(() => {
+      saveBtn.textContent = originalText;
+      saveBtn.style.background = '#4CAF50';
+      saveBtn.disabled = false;
+    }, 3000);
+  }
 }
 
 let currentCalendarDate = new Date();
