@@ -671,6 +671,37 @@ app.get('/api/pushups/:userId/calendar', async (req, res) => {
   }
 });
 
+// GET /api/calendar/:userId/date/:date - Get detailed exercise data for specific date (must be before general calendar route)
+app.get('/api/calendar/:userId/date/:date', async (req, res) => {
+  try {
+    const { userId, date } = req.params;
+    
+    console.log(`Calendar request: userId=${userId}, date=${date}`);
+    
+    // Get detailed exercises for each type for specific date
+    const response = {};
+    
+    for (const exerciseType of ['pushups', 'squats', 'situps']) {
+      const table = getExerciseTable(exerciseType);
+      const result = await pool.query(
+        `SELECT id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp 
+         FROM ${table} 
+         WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
+         ORDER BY timestamp ASC`, 
+        [userId, date]
+      );
+      response[exerciseType] = result.rows;
+      console.log(`${exerciseType}: found ${result.rows.length} entries`);
+    }
+    
+    console.log(`Calendar response:`, response);
+    res.json(response);
+  } catch (err) {
+    console.error('Calendar endpoint error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Calendar API endpoint
 app.get('/api/calendar/:userId/:year/:month', async (req, res) => {
   try {
@@ -1072,41 +1103,6 @@ app.get('/api/exercises/combined/:userId/details', async (req, res) => {
          WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
          ORDER BY timestamp DESC`, 
         [userId, today]
-      );
-      return {
-        exercise: exerciseType,
-        data: result.rows
-      };
-    });
-    
-    const exerciseData = await Promise.all(promises);
-    
-    // Format response as expected by frontend
-    const response = {};
-    exerciseData.forEach(({ exercise, data }) => {
-      response[exercise] = data;
-    });
-    
-    res.json(response);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/calendar/:userId/date/:date - Get detailed exercise data for specific date
-app.get('/api/calendar/:userId/date/:date', async (req, res) => {
-  try {
-    const { userId, date } = req.params;
-    
-    // Get detailed exercises for each type for specific date
-    const promises = ['pushups', 'squats', 'situps'].map(async (exerciseType) => {
-      const table = getExerciseTable(exerciseType);
-      const result = await pool.query(
-        `SELECT id, user_id, count, to_char(timestamp, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as timestamp 
-         FROM ${table} 
-         WHERE user_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2 
-         ORDER BY timestamp ASC`, 
-        [userId, date]
       );
       return {
         exercise: exerciseType,

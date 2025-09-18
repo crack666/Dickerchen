@@ -193,24 +193,32 @@ async function updateExerciseImages(allExerciseData = null) {
     const img = btn.querySelector('.exercise-icon');
     
     if (config && img && allExerciseData) {
-      // Calculate total for this specific exercise type
       let exerciseTotal = 0;
-      if (allExerciseData[exerciseType]) {
+      let goalReached = false;
+      
+      // Support both formats: breakdown format and detailed format
+      if (allExerciseData.breakdown && allExerciseData.breakdown[exerciseType]) {
+        // Format from /exercises/combined/:userId (with breakdown)
+        const exerciseData = allExerciseData.breakdown[exerciseType];
+        exerciseTotal = exerciseData.total || 0;
+        goalReached = exerciseData.hasReachedGoal || false;
+      } else if (allExerciseData[exerciseType]) {
+        // Format from /exercises/combined/:userId/details (with arrays)
         exerciseTotal = Array.isArray(allExerciseData[exerciseType]) 
           ? allExerciseData[exerciseType].reduce((sum, item) => sum + item.count, 0)
           : 0;
+        
+        // Check if daily goal is reached for THIS specific exercise
+        const exerciseGoal = config.defaultGoal;
+        goalReached = exerciseTotal >= exerciseGoal;
       }
-      
-      // Check if daily goal is reached for THIS specific exercise
-      const exerciseGoal = config.defaultGoal;
-      const goalReached = exerciseTotal >= exerciseGoal;
       
       // Use strong image if goal is reached, otherwise weak
       const imageSrc = (goalReached && config.strongImage) ? config.strongImage : config.weakImage;
       
       if (imageSrc && img.src !== imageSrc) {
         img.src = imageSrc;
-        console.log(`🖼️ Updated ${exerciseType} image to ${imageSrc} (${exerciseTotal}/${exerciseGoal} - goal reached: ${goalReached})`);
+        console.log(`🖼️ Updated ${exerciseType} image to ${imageSrc} (${exerciseTotal} total - goal reached: ${goalReached})`);
       }
     }
   });
@@ -1009,7 +1017,7 @@ function renderLeaderboard(userProgress) {
     
     // Show breakdown tooltip for combined leaderboard
     let breakdownInfo = '';
-    if (user.breakdown) {
+    /*if (user.breakdown) {
       const { pushups, squats, situps } = user.breakdown;
       if (pushups > 0 || squats > 0 || situps > 0) {
         const parts = [];
@@ -1018,7 +1026,7 @@ function renderLeaderboard(userProgress) {
         if (situps > 0) parts.push(`🏋️ ${situps}`);
         breakdownInfo = ` (${parts.join(', ')})`;
       }
-    }
+    }*/
     
     li.innerHTML = `
       <span class="rank">${index + 1}. ${user.name} ${userId && user.id == userId ? '(Du)' : ''}${achievementIcon}</span>
@@ -1139,7 +1147,10 @@ async function loadAlltimeStats() {
 
 async function openUserModal(user) {
   document.getElementById('modal-name').textContent = user.name;
-  document.getElementById('modal-progress').textContent = `Heutige Dicke: ${user.total}`;
+  
+  // Support both old format (total) and new format (today_total)
+  const userTotal = user.today_total !== undefined ? user.today_total : user.total;
+  document.getElementById('modal-progress').textContent = `Heutige Dicke: ${userTotal}`;
   document.getElementById('modal-log-title').textContent = 'Protokoll heute:';
   
   // Load detailed log from combined exercises endpoint
