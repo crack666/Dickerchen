@@ -414,7 +414,9 @@ function updateExerciseUI() {
   updateExerciseImages();
   updateAddButtonImages();
   
-  console.log(`🎯 Updated daily goal to: ${dailyGoal} for ${currentExercise}`);
+  // Use personalized goal if available, otherwise fallback to default
+  const personalGoal = getCurrentDailyGoal();
+  console.log(`🎯 Updated daily goal to: ${personalGoal} for ${currentExercise}`);
 }
 
 // Update exercise images based on progress and context
@@ -1143,12 +1145,56 @@ function getCurrentPushups() {
   return window.currentPushups || 0;
 }
 
+// Global variable to store user goals
+window.userGoals = {};
+
+// Load user goals from backend
+async function loadUserGoals(userId) {
+  try {
+    console.log('🎯 Loading user goals for userId:', userId);
+    const response = await fetch(`${API_BASE}/users/${userId}/goals`);
+    if (response.ok) {
+      window.userGoals = await response.json();
+      console.log('✅ User goals loaded:', window.userGoals);
+      // Update UI with loaded goals
+      updateGoalsInUI();
+    } else {
+      console.log('⚠️ No user goals found, using defaults');
+      window.userGoals = {};
+    }
+  } catch (error) {
+    console.error('❌ Error loading user goals:', error);
+    window.userGoals = {};
+  }
+}
+
+// Update UI with loaded goals
+function updateGoalsInUI() {
+  Object.keys(window.userGoals).forEach(exercise => {
+    const goalInput = document.getElementById(`goal-${exercise}`);
+    if (goalInput) {
+      goalInput.value = window.userGoals[exercise];
+    }
+  });
+  
+  // Update current exercise display
+  updateProgressDisplay();
+  updateExerciseImages();
+}
+
 // Get the current daily goal for the selected exercise
 function getCurrentDailyGoal() {
+  // First try from loaded user goals
+  if (window.userGoals && window.userGoals[currentExercise]) {
+    return parseInt(window.userGoals[currentExercise]);
+  }
+  
+  // Then try from input field
   const goalInput = document.getElementById(`goal-${currentExercise}`);
   if (goalInput && goalInput.value) {
     return parseInt(goalInput.value);
   }
+  
   // Fallback to default goal for the exercise
   return exerciseConfig[currentExercise]?.defaultGoal || 50;
 }
