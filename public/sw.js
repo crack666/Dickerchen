@@ -1,7 +1,7 @@
 // Dickerchen Service Worker
 // Supports: offline core assets, push notifications, dev-friendly behaviour
 
-const VERSION = 'v9'; // bump to force update - emoji celebration feature
+const VERSION = '1.2.3'; // Match app version exactly - no 'v' prefix
 const DEV = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
 const CORE_CACHE = `dickerchen-core-${VERSION}`;
 const RUNTIME_CACHE = `dickerchen-runtime-${VERSION}`;
@@ -27,6 +27,13 @@ function log(...args) {
 self.addEventListener('install', event => {
 	log('install', VERSION, 'DEV=', DEV);
 	self.skipWaiting(); // Force immediate activation
+	
+	// In development, skip caching to avoid stale content
+	if (DEV) {
+		log('DEV mode: skipping asset caching');
+		return;
+	}
+	
 	event.waitUntil(
 		caches.open(CORE_CACHE).then(async cache => {
 			try {
@@ -111,6 +118,12 @@ self.addEventListener('fetch', event => {
 
 	// Static assets
 	if (/(\.js$|\.css$|\.svg$|\.png$|\.ico$)/.test(url.pathname)) {
+		// In development, always fetch fresh to avoid stale content
+		if (DEV) {
+			log('DEV mode: fetching fresh asset', url.pathname);
+			event.respondWith(fetch(req));
+			return;
+		}
 		event.respondWith(cacheFirst(req));
 		return;
 	}

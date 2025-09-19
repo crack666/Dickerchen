@@ -1048,6 +1048,15 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Version endpoint for update checks
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: '1.2.3', // Should match frontend version
+    buildDate: new Date().toISOString(),
+    serverTime: new Date().toISOString()
+  });
+});
+
 // Daily notifications endpoint (for GitHub Actions)
 app.post('/api/send-daily-notifications', async (req, res) => {
   try {

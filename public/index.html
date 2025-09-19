@@ -5,12 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dickerchen</title>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/styles.css">
+  <script src="/version.js"></script>
+  <script>
+    // Apply versioning immediately after version.js loads
+    document.addEventListener('DOMContentLoaded', function() {
+      // Force reload CSS with version parameter
+      const cssLink = document.getElementById('main-styles');
+      if (cssLink && window.versionedUrl) {
+        cssLink.href = window.versionedUrl('/styles.css');
+      }
+      
+      // Also add timestamp to force cache bust
+      const timestamp = Date.now();
+      if (cssLink) {
+        const separator = cssLink.href.includes('?') ? '&' : '?';
+        cssLink.href = cssLink.href + separator + 't=' + timestamp;
+      }
+    });
+  </script>
+  <link rel="stylesheet" href="/styles.css" id="main-styles">
 </head>
 <body>
   <div id="app">
     <header>
-      <h1>💪Dickerchen</h1>
+      <h1>💪Dickerchen<span class="version-info" id="version-display"></span></h1>
       <div class="exercise-switcher">
         <button class="exercise-btn current-exercise" data-exercise="pushups">
           <img src="pushup_weak.png" alt="Push-ups" class="exercise-icon">
@@ -132,6 +150,42 @@
       </div>
     </main>
   </div>
-  <script src="/app.js"></script>
+  <script>
+    // Load app.js with version parameter - wait for version.js to be fully loaded
+    function loadAppJS() {
+      // Force aggressive cache busting with multiple parameters
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(7);
+      
+      if (window.versionedUrl) {
+        const appScript = document.createElement('script');
+        appScript.src = window.versionedUrl('/app.js') + '&t=' + timestamp + '&r=' + random;
+        document.body.appendChild(appScript);
+        console.log('📦 Loading app.js with version:', appScript.src);
+      } else {
+        // Fallback if version.js fails
+        const appScript = document.createElement('script');
+        appScript.src = '/app.js?t=' + timestamp + '&r=' + random;
+        document.body.appendChild(appScript);
+        console.log('📦 Loading app.js without version:', appScript.src);
+      }
+    }
+    
+    // Ensure version.js is loaded first
+    if (window.APP_VERSION) {
+      loadAppJS();
+    } else {
+      // Wait a bit for version.js to load
+      setTimeout(loadAppJS, 100);
+    }
+    
+    // Display version in header
+    document.addEventListener('DOMContentLoaded', () => {
+      const versionDisplay = document.getElementById('version-display');
+      if (versionDisplay && window.APP_VERSION) {
+        versionDisplay.textContent = `v${window.APP_VERSION}`;
+      }
+    });
+  </script>
 </body>
 </html>

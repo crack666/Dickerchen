@@ -1,11 +1,256 @@
 // app.js
-// API Base URL - simplified for local development
-const API_BASE = window.location.hostname === 'dickerchen.fly.dev'
-  ? `${window.location.protocol}//${window.location.host}/api`
-  : '/api';  // Use relative URLs for local development
+// API Base URL - robust logic for ALL environments
+const API_BASE = (() => {
+  const hostname = window.location.hostname;
+  const port = window.location.port;
+  const protocol = window.location.protocol;
+  
+  console.log(`🔍 Detecting environment: ${hostname}:${port}`);
+  
+  // Production: fly.dev (serves everything from same origin)
+  if (hostname.includes('fly.dev') || hostname.includes('dickerchen')) {
+    const base = `${protocol}//${window.location.host}/api`;
+    console.log('📡 Production environment detected');
+    return base;
+  }
+  
+  // Local development: localhost/127.0.0.1
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    // If we're on port 3001, that's the Node.js server with API
+    if (port === '3001') {
+      const base = `${protocol}//${hostname}:3001/api`;
+      console.log('🔧 Local Node.js server detected');
+      return base;
+    }
+    
+    // If we're on a different port (like 5000, 8080, etc.), assume Node.js runs on 3001
+    if (port && port !== '3001') {
+      const base = `${protocol}//${hostname}:3001/api`;
+      console.log('🔗 Local dev server detected, pointing to Node.js on 3001');
+      return base;
+    }
+    
+    // Default localhost without port
+    const base = `${protocol}//${hostname}:3001/api`;
+    console.log('🏠 Localhost detected, assuming Node.js on 3001');
+    return base;
+  }
+  
+  // TrueNAS or other custom domains
+  if (hostname.includes('truenas') || hostname.includes('192.168.') || hostname.includes('10.')) {
+    const base = `${protocol}//${window.location.host}/api`;
+    console.log('🏠 Internal network/TrueNAS detected');
+    return base;
+  }
+  
+  // Fallback: relative URLs (should work for most setups)
+  console.log('🔄 Using relative API URLs as fallback');
+  return '/api';
+})();
 
-console.log('🔗 API_BASE URL:', API_BASE);
+console.log('🔗 Final API_BASE URL:', API_BASE);
 console.log('🌐 Window location:', window.location.href);
+
+// Test API connection immediately with timeout and retry logic
+async function testAPIConnection() {
+  const testUrl = API_BASE + '/test';
+  console.log('🔌 Testing API connection to:', testUrl);
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    const response = await fetch(testUrl, { 
+      signal: controller.signal,
+      cache: 'no-cache'
+    });
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('✅ API connection successful:', data);
+      return true;
+    } else {
+      console.error('❌ API responded with error:', response.status, response.statusText);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ API connection failed:', error.message);
+    
+    // If we're in local development and API fails, try alternative ports
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('🔄 Trying alternative API configurations...');
+      return await tryAlternativeAPIs();
+    }
+    return false;
+  }
+}
+
+// Try alternative API configurations for local development
+async function tryAlternativeAPIs() {
+  const alternatives = [
+    `${window.location.protocol}//localhost:3001/api`,
+    `${window.location.protocol}//127.0.0.1:3001/api`,
+    '/api'
+  ];
+  
+  for (const altAPI of alternatives) {
+    if (altAPI === API_BASE) continue; // Skip the one we already tried
+    
+    console.log('🔄 Trying alternative API:', altAPI);
+    try {
+      const response = await fetch(altAPI + '/test', { cache: 'no-cache' });
+      if (response.ok) {
+        console.log('✅ Alternative API works:', altAPI);
+        // Update the global API_BASE
+        window.API_BASE_OVERRIDE = altAPI;
+        return true;
+      }
+    } catch (error) {
+      console.log('❌ Alternative API failed:', altAPI, error.message);
+    }
+  }
+  
+  return false;
+}
+
+// Override fetch to use alternative API if needed
+const originalFetch = window.fetch;
+window.fetch = function(url, options) {
+  if (typeof url === 'string' && url.startsWith(API_BASE) && window.API_BASE_OVERRIDE) {
+    url = url.replace(API_BASE, window.API_BASE_OVERRIDE);
+  }
+  return originalFetch.call(this, url, options);
+};
+
+// Test connection on load
+testAPIConnection();
+
+// Version and Update Management
+function checkForUpdates() {
+  // Check if we have a server version endpoint
+  fetch(API_BASE + '/version')
+    .then(response => response.json())
+    .then(serverVersion => {
+      console.log(`🔍 Version check: Client=${window.APP_VERSION}, Server=${serverVersion.version}`);
+      
+      // Normalize versions for comparison (remove 'v' prefix if present)
+      const clientVersion = window.APP_VERSION.replace(/^v/, '');
+      const serverVersionClean = serverVersion.version.replace(/^v/, '');
+      
+      if (isNewerVersion(serverVersionClean, clientVersion)) {
+        console.log(`🚀 New version available: ${serverVersionClean} > ${clientVersion}`);
+        showUpdateNotification(serverVersionClean);
+      } else {
+        console.log(`✅ Version up to date: ${clientVersion}`);
+      }
+    })
+    .catch(error => {
+      console.log('ℹ️ No server version check available:', error.message);
+    });
+}
+
+// Proper semantic version comparison
+function isNewerVersion(serverVersion, clientVersion) {
+  const parseVersion = (v) => v.split('.').map(n => parseInt(n) || 0);
+  const server = parseVersion(serverVersion);
+  const client = parseVersion(clientVersion);
+  
+  for (let i = 0; i < Math.max(server.length, client.length); i++) {
+    const s = server[i] || 0;
+    const c = client[i] || 0;
+    if (s > c) return true;
+    if (s < c) return false;
+  }
+  return false; // Versions are equal
+}
+
+function showUpdateNotification(newVersion) {
+  // Prevent duplicate notifications
+  if (document.querySelector('.update-notification')) {
+    console.log('🔄 Update notification already visible');
+    return;
+  }
+  
+  const notification = document.createElement('div');
+  notification.className = 'update-notification';
+  notification.innerHTML = `
+    <div class="update-content">
+      <strong>🚀 Update verfügbar!</strong><br>
+      Version ${newVersion || 'unbekannt'} ist verfügbar.<br>
+      <button onclick="reloadApp()" class="update-btn">Jetzt aktualisieren</button>
+      <button onclick="dismissUpdate(this)" class="dismiss-btn">Später</button>
+    </div>
+  `;
+  document.body.appendChild(notification);
+  
+  console.log(`📢 Showing update notification for version ${newVersion}`);
+}
+
+function dismissUpdate(button) {
+  const notification = button.closest('.update-notification');
+  if (notification) {
+    notification.remove();
+  }
+}
+
+function reloadApp() {
+  // Clear all caches and reload
+  if ('caches' in window) {
+    caches.keys().then(names => {
+      names.forEach(name => {
+        caches.delete(name);
+      });
+      window.location.reload(true);
+    });
+  } else {
+    window.location.reload(true);
+  }
+}
+
+// Force cache busting for critical resources
+function bustCache() {
+  const timestamp = Date.now();
+  const links = document.querySelectorAll('link[rel="stylesheet"]');
+  links.forEach(link => {
+    const href = link.href.split('?')[0]; // Remove existing query params
+    link.href = `${href}?v=${window.APP_VERSION}&t=${timestamp}`;
+  });
+}
+
+// Aggressive cache clearing for development
+function clearAllCaches() {
+  console.log('🧹 Clearing all caches...');
+  
+  // 1. Clear all cache storage
+  if ('caches' in window) {
+    caches.keys().then(cacheNames => {
+      cacheNames.forEach(cacheName => {
+        console.log('🗑️ Deleting cache:', cacheName);
+        caches.delete(cacheName);
+      });
+    });
+  }
+  
+  // 2. Unregister service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      registrations.forEach(registration => {
+        console.log('🗑️ Unregistering service worker');
+        registration.unregister();
+      });
+    });
+  }
+  
+  // 3. Clear local storage
+  localStorage.clear();
+  sessionStorage.clear();
+  
+  // 4. Force reload
+  setTimeout(() => {
+    window.location.reload(true);
+  }, 1000);
+}
 
 // Test API connection immediately
 fetch(API_BASE + '/test')
@@ -270,32 +515,87 @@ function setupExerciseSwitcher() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await initializeUser();
+// Main initialization function
+async function initializeApp() {
+  console.log('🏁 App initialization started...');
   
-  // Initialize exercise switcher
-  setupExerciseSwitcher();
-  updateExerciseUI(); // Set initial UI state
+  // Check if we're in local development
+  const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.port === '3001';
+  
+  if (isLocalDev) {
+    console.log('🔧 Local development detected - aggressive cache clearing enabled');
+    // In development, clear everything on page load
+    if (window.location.search.includes('fresh=1')) {
+      clearAllCaches();
+      return; // Will reload page
+    }
+  }
+  
+  try {
+    console.log('👤 Initializing user...');
+    await initializeUser();
+    console.log('✅ User initialized successfully');
+    
+    // Load user's personalized goals if user is already logged in
+    if (userId) {
+      console.log('🎯 User already logged in, loading personalized goals for user:', userId);
+      await loadUserGoals();
+      // Update login button text
+      const loginBtn = document.getElementById('login-btn');
+      if (loginBtn) {
+        loginBtn.textContent = userName;
+      }
+    }
+    
+    // Initialize cache busting and update checks
+    console.log('🧹 Running cache busting...');
+    bustCache();
+    if (!isLocalDev) {
+      setTimeout(checkForUpdates, 2000); // Only check for updates in production
+    }
+    
+    // Initialize exercise switcher
+    console.log('🔄 Setting up exercise switcher...');
+    setupExerciseSwitcher();
+    updateExerciseUI(); // Set initial UI state
 
-  // Tab switching
-  document.getElementById('tab-today').addEventListener('click', () => switchTab('today'));
-  document.getElementById('tab-alltime').addEventListener('click', () => switchTab('alltime'));
+    // Tab switching
+    console.log('📑 Setting up tab switching...');
+    document.getElementById('tab-today').addEventListener('click', () => switchTab('today'));
+    document.getElementById('tab-alltime').addEventListener('click', () => switchTab('alltime'));
 
-  loadProgress();
-  loadLeaderboard();
+    console.log('📊 Loading progress...');
+    loadProgress();
+    
+    console.log('🏆 Loading leaderboard...');
+    loadLeaderboard();
+    
+    console.log('✅ All initialization complete!');
+    
+  } catch (error) {
+    console.error('❌ Error during initialization:', error);
+    console.error('Stack trace:', error.stack);
+  }
   
   // Auto-refresh setup
   setupAutoRefresh();
 
   // Debug: Check if add buttons exist
   const addButtons = document.querySelectorAll('.add-btn');
-  console.log(`🔍 Found ${addButtons.length} add buttons:`, addButtons);
-  
-  addButtons.forEach((btn, index) => {
-    console.log(`Button ${index + 1}:`, btn, 'data-count:', btn.dataset.count);
-  });
+  console.log(`Found ${addButtons.length} add buttons`);
+}
 
-  document.querySelectorAll('.add-btn').forEach(btn => {
+// Run initialization immediately or when DOM is ready
+if (document.readyState === 'loading') {
+  console.log('📄 DOM still loading, waiting for DOMContentLoaded...');
+  document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+  console.log('📄 DOM already ready, initializing immediately...');
+  initializeApp();
+}
+
+// Setup add buttons after DOM is ready
+document.querySelectorAll('.add-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       console.log('🔥 Add button clicked!', btn.dataset.count, 'Button element:', btn); // Debug log
       console.log('🔥 Event object:', e);
@@ -323,7 +623,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const progressText = document.getElementById('progress-text');
   const progressFill = document.getElementById('progress-fill');
   const saveBtn = document.getElementById('save-progress');
-  let currentPushups = 0;
+  // Use global currentPushups variable instead of redeclaring
   let isSliding = false;
   let sliderInitialized = false;
   
@@ -351,7 +651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Set strict boundaries
     progressSlider.min = currentPushups; // Can't go below current progress
-    progressSlider.max = dailyGoal;
+    progressSlider.max = getCurrentDailyGoal();
     progressSlider.value = currentPushups;
     
     // Mark as initialized BEFORE updating display
@@ -369,11 +669,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update both progress fill and slider position
   function updateSliderDisplay() {
     const sliderValue = parseInt(progressSlider.value);
-    const progress = Math.min((sliderValue / dailyGoal) * 100, 100); // Cap at 100%
+    const currentGoal = getCurrentDailyGoal();
+    const progress = Math.min((sliderValue / currentGoal) * 100, 100); // Cap at 100%
     
     // Update progress fill to match slider
     progressFill.style.width = `${progress}%`;
-    progressText.textContent = `${sliderValue} / ${dailyGoal}`;
+    progressText.textContent = `${sliderValue} / ${currentGoal}`;
     
     // Show/hide save button
     if (sliderValue !== currentPushups) {
@@ -580,16 +881,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.appendChild(updateBanner);
   }
   
-  // Listen for Service Worker messages (safely)
+  // Listen for Service Worker messages (safely) - DISABLED to prevent false positives
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', event => {
       try {
         if (event.data && event.data.type === 'UPDATE_AVAILABLE') {
-          console.log('🔄 Service Worker says update available!');
+          console.log('🔄 Service Worker says update available - but ignoring to prevent false positives');
+          // DISABLED: We now rely on proper server version checking instead
           // Only show update notification if no banner exists already
-          if (!document.getElementById('update-banner')) {
-            showUpdateNotification();
-          }
+          // if (!document.getElementById('update-banner')) {
+          //   showUpdateNotification();
+          // }
         }
       } catch (e) {
         console.log('Service Worker message handling failed (non-critical):', e);
@@ -619,7 +921,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       saveUserGoals(userId);
     }
   });
-});
 
 async function initializeUser() {
   // If user is already logged in and has notification permission, try to subscribe
@@ -683,6 +984,10 @@ async function createOrLoginUser(name) {
   
   // Update login button
   document.getElementById('login-btn').textContent = `${userName}`;
+  
+  // Load user's personalized goals immediately after login
+  console.log('🎯 Loading personalized goals for user:', userId);
+  await loadUserGoals();
   
   // Clean up old push subscriptions ONLY if user actually changed
   if (previousUserId && previousUserId !== userId) {
@@ -828,34 +1133,48 @@ async function loadProgress() {
 
 function updateProgressDisplay(total = null) {
   const currentTotal = total !== null ? total : getCurrentPushups();
-  const progress = Math.min((currentTotal / dailyGoal) * 100, 100); // Cap at 100%
+  const currentGoal = getCurrentDailyGoal();
+  const progress = Math.min((currentTotal / currentGoal) * 100, 100); // Cap at 100%
   document.getElementById('progress-fill').style.width = `${progress}%`;
-  document.getElementById('progress-text').textContent = `${currentTotal} / ${dailyGoal}`;
+  document.getElementById('progress-text').textContent = `${currentTotal} / ${currentGoal}`;
 }
 
 function getCurrentPushups() {
   return window.currentPushups || 0;
 }
 
+// Get the current daily goal for the selected exercise
+function getCurrentDailyGoal() {
+  const goalInput = document.getElementById(`goal-${currentExercise}`);
+  if (goalInput && goalInput.value) {
+    return parseInt(goalInput.value);
+  }
+  // Fallback to default goal for the exercise
+  return exerciseConfig[currentExercise]?.defaultGoal || 50;
+}
+
 function updateMotivation(total) {
   const motivationEl = document.getElementById('motivation');
+  const currentGoal = getCurrentDailyGoal();
+  
   if (total === 0) {
     motivationEl.textContent = 'Los geht\'s! Mach deine ersten Dicken! 💪';
   } else if (total < 30) {
     motivationEl.textContent = `Gut gemacht! ${total} Dicke geschafft! 🏋️‍♂️`;
-  } else if (total < dailyGoal) {
-    motivationEl.textContent = `Hammer! Nur noch ${dailyGoal - total} bis zum Ziel! 🔥`;
+  } else if (total < currentGoal) {
+    motivationEl.textContent = `Hammer! Nur noch ${currentGoal - total} bis zum Ziel! 🔥`;
   } else {
     motivationEl.textContent = `Wow! Tagesziel erreicht! Du bist ein Dicker! 🏆`;
   }
 }
 
 function shareProgress(total) {
-  const percentage = Math.round((total / dailyGoal) * 100);
+  const currentGoal = getCurrentDailyGoal();
+  const percentage = Math.round((total / currentGoal) * 100);
   const messages = [
     `💪 Ich habe heute schon ${total} Dicke gemacht! Das sind ${percentage}% meines Tagesziels! #Dickerchen #Fitness`,
-    `🏋️‍♂️ ${total} Dicke heute geschafft! Nur noch ${dailyGoal - total} bis zum Ziel! Wer macht mit? #Dickerchen`,
-    `🔥 Fortschritt des Tages: ${total}/${dailyGoal} Dicke (${percentage}%)! Motivation pur! #Dickerchen #PushUps`,
+    `🏋️‍♂️ ${total} Dicke heute geschafft! Nur noch ${currentGoal - total} bis zum Ziel! Wer macht mit? #Dickerchen`,
+    `🔥 Fortschritt des Tages: ${total}/${currentGoal} Dicke (${percentage}%)! Motivation pur! #Dickerchen #PushUps`,
     `🚀 ${total} Dicke heute - ich bin auf Kurs! Wer überholt mich? #Dickerchen #Challenge`
   ];
   
@@ -930,21 +1249,31 @@ async function addPushup(count = 1) {
 }
 
 async function loadLeaderboard() {
+  console.log('🏆 loadLeaderboard() called');
   try {
     // Use combined leaderboard endpoint that sums all exercises
-    const response = await fetch(`${API_BASE}/leaderboard/combined`);
+    const url = `${API_BASE}/leaderboard/combined`;
+    console.log('📡 Fetching leaderboard from:', url);
+    
+    const response = await fetch(url);
+    console.log('📨 Leaderboard response status:', response.status);
     
     if (response.ok) {
       // Use new backend-calculated combined leaderboard
       const userProgress = await response.json();
+      console.log('📊 Leaderboard data received:', userProgress);
+      console.log('👥 Number of users:', userProgress.length);
+      
       renderLeaderboard(userProgress);
+      console.log('✅ Leaderboard rendered successfully');
     } else {
       // Fallback to old logic if new endpoint not available
-      console.log('Combined leaderboard endpoint not available, falling back to old logic');
+      console.log('⚠️ Combined leaderboard endpoint not available, falling back to old logic');
       await loadLeaderboardFallback();
     }
   } catch (error) {
-    console.log('Error loading combined leaderboard, falling back to old logic:', error);
+    console.error('❌ Error loading combined leaderboard:', error);
+    console.log('🔄 Falling back to old logic...');
     await loadLeaderboardFallback();
   }
 }
@@ -968,7 +1297,8 @@ async function loadLeaderboardFallback() {
       
       for (const pushup of sortedPushups) {
         runningTotal += pushup.count;
-        if (runningTotal >= dailyGoal && !goalReachedAt) {
+        const currentGoal = getCurrentDailyGoal();
+        if (runningTotal >= currentGoal && !goalReachedAt) {
           goalReachedAt = new Date(pushup.timestamp);
           break;
         }
@@ -979,7 +1309,7 @@ async function loadLeaderboardFallback() {
       ...user, 
       total: progress.total,
       goalReachedAt: goalReachedAt,
-      hasReachedGoal: progress.total >= dailyGoal
+      hasReachedGoal: progress.total >= getCurrentDailyGoal()
     };
   }));
   
@@ -1516,7 +1846,7 @@ async function loadCalendar(userId) {
     }
     
     // Ensure dailyGoal is defined
-    const goalThreshold = dailyGoal || 50;
+    const goalThreshold = getCurrentDailyGoal();
     
     if (isFutureDate) {
       // Future dates: neutral styling
@@ -1881,11 +2211,17 @@ document.getElementById('test-notifications-btn').onclick = async () => {
   }
 };
 
-// Auto-refresh functionality
+// Auto-refresh functionality - moved to top to avoid hoisting issues
 let refreshInterval = null;
 let lastUpdateTime = Date.now();
 
 function setupAutoRefresh() {
+  // Ensure variables are initialized
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+  }
+  lastUpdateTime = Date.now();
+  
   // 1. Refresh when page becomes visible again
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {

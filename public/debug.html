@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dickerchen - Cache Debug</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+    .debug-card { background: white; padding: 20px; border-radius: 10px; margin: 10px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    button { padding: 10px 20px; margin: 10px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #45a049; }
+    .danger { background: #f44336; }
+    .danger:hover { background: #da190b; }
+    pre { background: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>🔧 Dickerchen Cache Debug</h1>
+  
+  <div class="debug-card">
+    <h2>Cache Management</h2>
+    <button onclick="clearAllCaches()" class="danger">🗑️ Clear ALL Caches</button>
+    <button onclick="unregisterServiceWorker()" class="danger">🔄 Unregister Service Worker</button>
+    <button onclick="forceReload()">🔃 Force Reload</button>
+    <button onclick="showCacheInfo()">📊 Show Cache Info</button>
+  </div>
+  
+  <div class="debug-card">
+    <h2>Cache Information</h2>
+    <div id="cache-info">Click "Show Cache Info" to see current caches...</div>
+  </div>
+  
+  <div class="debug-card">
+    <h2>Quick Actions</h2>
+    <button onclick="goToApp()">🏠 Back to App</button>
+    <button onclick="goToAppFresh()">🆕 App (Fresh Load)</button>
+  </div>
+
+  <script>
+    async function clearAllCaches() {
+      console.log('🧹 Clearing all caches...');
+      
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        console.log('Found caches:', cacheNames);
+        
+        for (const cacheName of cacheNames) {
+          await caches.delete(cacheName);
+          console.log('Deleted cache:', cacheName);
+        }
+      }
+      
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      alert('✅ All caches cleared!');
+      showCacheInfo();
+    }
+    
+    async function unregisterServiceWorker() {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+          console.log('Unregistered service worker');
+        }
+        alert('✅ Service worker unregistered!');
+      } else {
+        alert('❌ Service worker not supported');
+      }
+    }
+    
+    function forceReload() {
+      window.location.reload(true);
+    }
+    
+    async function showCacheInfo() {
+      const infoDiv = document.getElementById('cache-info');
+      let info = '<h3>Cache Storage:</h3>';
+      
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        if (cacheNames.length === 0) {
+          info += '<p>✅ No caches found</p>';
+        } else {
+          info += '<ul>';
+          for (const cacheName of cacheNames) {
+            const cache = await caches.open(cacheName);
+            const keys = await cache.keys();
+            info += `<li><strong>${cacheName}</strong> (${keys.length} entries)</li>`;
+          }
+          info += '</ul>';
+        }
+      } else {
+        info += '<p>❌ Cache API not supported</p>';
+      }
+      
+      info += '<h3>Local Storage:</h3>';
+      info += `<p>Items: ${localStorage.length}</p>`;
+      
+      info += '<h3>Service Worker:</h3>';
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        info += `<p>Registrations: ${registrations.length}</p>`;
+      } else {
+        info += '<p>❌ Service worker not supported</p>';
+      }
+      
+      infoDiv.innerHTML = info;
+    }
+    
+    function goToApp() {
+      window.location.href = '/';
+    }
+    
+    function goToAppFresh() {
+      window.location.href = '/?fresh=1';
+    }
+    
+    // Auto-load cache info on page load
+    showCacheInfo();
+  </script>
+</body>
+</html>
