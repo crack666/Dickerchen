@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dickerchen Test</title>
+</head>
+<body>
+  <h1>JavaScript Test</h1>
+  <div id="test-output"></div>
+  
+  <script>
+    console.log('🔧 Testing JavaScript execution...');
+    
+    // Test 1: Basic API call
+    async function testAPI() {
+      try {
+        const response = await fetch('/api/test');
+        const data = await response.json();
+        console.log('✅ API Test:', data);
+        document.getElementById('test-output').innerHTML += '<p>✅ API Test: ' + JSON.stringify(data) + '</p>';
+      } catch (error) {
+        console.error('❌ API Test failed:', error);
+        document.getElementById('test-output').innerHTML += '<p>❌ API Test failed: ' + error.message + '</p>';
+      }
+    }
+    
+    // Test 2: Leaderboard API
+    async function testLeaderboard() {
+      try {
+        const response = await fetch('/api/leaderboard/combined');
+        const data = await response.json();
+        console.log('✅ Leaderboard Test:', data);
+        document.getElementById('test-output').innerHTML += '<p>✅ Leaderboard Test: ' + data.length + ' users found</p>';
+        document.getElementById('test-output').innerHTML += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+      } catch (error) {
+        console.error('❌ Leaderboard Test failed:', error);
+        document.getElementById('test-output').innerHTML += '<p>❌ Leaderboard Test failed: ' + error.message + '</p>';
+      }
+    }
+    
+    // Test 3: Version.js availability
+    function testVersion() {
+      if (window.APP_VERSION) {
+        console.log('✅ Version available:', window.APP_VERSION);
+        document.getElementById('test-output').innerHTML += '<p>✅ Version: ' + window.APP_VERSION + '</p>';
+      } else {
+        console.log('❌ Version not available');
+        document.getElementById('test-output').innerHTML += '<p>❌ Version not available</p>';
+      }
+    }
+    
+    // Run tests
+    document.addEventListener('DOMContentLoaded', async () => {
+      console.log('🏁 Starting tests...');
+      await testAPI();
+      await testLeaderboard();
+      testVersion();
+    });
+  </script>
+</body>
+</html>

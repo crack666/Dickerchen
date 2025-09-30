@@ -9,7 +9,39 @@ const webPush = require('web-push');
 const { Pool } = require('pg');
 const https = require('https');
 const fs = require('fs');
+const os = require('os');
 const NotificationManager = require('./notification-manager');
+
+// Dynamische IP-Erkennung für verschiedene Umgebungen
+function getLocalNetworkIP() {
+  const networkInterfaces = os.networkInterfaces();
+  
+  // Priorität: Erste verfügbare 192.168.x.x IP finden
+  for (const interfaceName in networkInterfaces) {
+    const addresses = networkInterfaces[interfaceName];
+    
+    for (const address of addresses) {
+      // IPv4, nicht loopback, nicht intern
+      if (address.family === 'IPv4' && !address.internal) {
+        // Bevorzuge 192.168.x.x Adressen (typisches Heimnetzwerk)
+        if (address.address.startsWith('192.168.')) {
+          return address.address;
+        }
+        // Fallback: 10.x.x.x oder 172.x.x.x
+        if (address.address.startsWith('10.') || address.address.startsWith('172.')) {
+          return address.address;
+        }
+      }
+    }
+  }
+  
+  // Fallback: localhost wenn keine Netzwerk-IP gefunden
+  return 'localhost';
+}
+
+// Ermittle die aktuelle Umgebung und IP
+const LOCAL_IP = getLocalNetworkIP();
+console.log(`🌐 Detected local IP: ${LOCAL_IP}`);
 
 const app = express();
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces
@@ -255,10 +287,10 @@ const corsOptions = {
     : [
         'http://localhost:3001',
         'http://127.0.0.1:3001',
-        'http://192.168.178.196:3001',
+        `http://${LOCAL_IP}:3001`,
         'https://localhost:3443',
         'https://127.0.0.1:3443',
-        'https://192.168.178.196:3443'
+        `https://${LOCAL_IP}:3443`
       ],
   credentials: true
 };
@@ -1051,7 +1083,7 @@ app.get('/api/test', (req, res) => {
 // Version endpoint for update checks
 app.get('/api/version', (req, res) => {
   res.json({
-    version: '1.2.3', // Should match frontend version
+    version: '1.2.5', // Should match frontend version
     buildDate: new Date().toISOString(),
     serverTime: new Date().toISOString()
   });
@@ -1543,7 +1575,7 @@ app.get('/api/leaderboard/:exerciseType', async (req, res) => {
 app.listen(PORT, HOST, () => {
   console.log(`HTTP Server running on http://${HOST}:${PORT}`);
   console.log(`Local access: http://localhost:${PORT}`);
-  console.log(`LAN access: http://192.168.178.196:${PORT}`);
+  console.log(`LAN access: http://${LOCAL_IP}:${PORT}`);
 });
 
 // Smart notification logic - triggered when someone adds push-ups
@@ -1703,7 +1735,7 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
     https.createServer(httpsOptions, app).listen(HTTPS_PORT, HOST, () => {
       console.log(`🔒 HTTPS Server running on https://${HOST}:${HTTPS_PORT}`);
       console.log(`🔒 Local HTTPS access: https://localhost:${HTTPS_PORT}`);
-      console.log(`🔒 LAN HTTPS access: https://192.168.178.196:${HTTPS_PORT}`);
+      console.log(`🔒 LAN HTTPS access: https://${LOCAL_IP}:${HTTPS_PORT}`);
       console.log(`📱 For PWA: Use HTTPS URL on mobile device`);
     });
   } catch (error) {
