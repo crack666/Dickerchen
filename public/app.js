@@ -51,6 +51,30 @@ const API_BASE = (() => {
 console.log('🔗 Final API_BASE URL:', API_BASE);
 console.log('🌐 Window location:', window.location.href);
 
+// Safe API wrapper using backend status manager
+async function safeApiCall(endpoint, options = {}) {
+  if (!window.backendStatus) {
+    // Fallback to regular fetch if status manager not available
+    return fetch(`${API_BASE}${endpoint}`, options);
+  }
+  
+  return window.backendStatus.safeFetch(`${API_BASE}${endpoint}`, options);
+}
+
+// Enhanced error handling for API calls
+function handleApiError(error, context = 'API call') {
+  console.error(`❌ ${context} failed:`, error);
+  
+  // Show user-friendly error message
+  if (error.message.includes('offline') || error.name === 'TypeError') {
+    showNotification('❌ Server offline - please try again later', 'error');
+  } else if (error.message.includes('404')) {
+    showNotification('❌ Function not found - please refresh', 'error');
+  } else {
+    showNotification('❌ Something went wrong - please try again', 'error');
+  }
+}
+
 // Test API connection immediately with timeout and retry logic
 async function testAPIConnection() {
   const testUrl = API_BASE + '/test';

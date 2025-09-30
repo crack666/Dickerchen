@@ -430,6 +430,15 @@ app.get('/api/users/:userId/goals', async (req, res) => {
   try {
     const { userId } = req.params;
     
+    // Validate userId
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      return res.status(400).json({ 
+        error: 'User ID required', 
+        code: 'MISSING_USER_ID',
+        defaultGoals: { pushups: 20, squats: 30, situps: 25 }
+      });
+    }
+    
     const goals = {};
     for (const exerciseType of ['pushups', 'squats', 'situps']) {
       goals[exerciseType] = await getUserGoal(userId, exerciseType);
@@ -437,6 +446,7 @@ app.get('/api/users/:userId/goals', async (req, res) => {
     
     res.json(goals);
   } catch (err) {
+    console.error('Error getting user goals:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1080,12 +1090,106 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Enhanced health check with database connectivity
+app.get('/api/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    services: {
+      api: 'healthy',
+      database: 'unknown',
+      version: process.env.npm_package_version || 'unknown'
+    }
+  };
+  
+  try {
+    // Test database connection
+    const result = await pool.query('SELECT 1 as test');
+    health.services.database = result.rows.length > 0 ? 'healthy' : 'unhealthy';
+  } catch (err) {
+    health.services.database = 'unhealthy';
+    health.status = 'degraded';
+    console.error('Database health check failed:', err.message);
+  }
+  
+  // Set appropriate HTTP status code
+  const statusCode = health.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
+// Connection status endpoint for frontend
+app.get('/api/status', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT COUNT(*) as user_count FROM users');
+    const userCount = parseInt(result.rows[0].user_count);
+    
+    res.json({
+      online: true,
+      database: 'connected',
+      users: userCount,
+      timestamp: new Date().toISOString(),
+      server: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: process.env.npm_package_version || '1.2.5'
+      }
+    });
+  } catch (err) {
+    res.status(503).json({
+      online: false,
+      database: 'disconnected',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Version endpoint for update checks
 app.get('/api/version', (req, res) => {
+  // Read version from environment or VERSION file
+  const fs = require('fs');
+  const path = require('path');
+  
+  let fileVersion = '1.2.6';
+  try {
+    const versionPath = path.join(__dirname, '..', 'VERSION');
+    if (fs.existsSync(versionPath)) {
+      fileVersion = fs.readFileSync(versionPath, 'utf8').trim();
+    }
+  } catch (err) {
+    console.warn('Could not read VERSION file:', err.message);
+  }
+  
   res.json({
-    version: '1.2.5', // Should match frontend version
-    buildDate: new Date().toISOString(),
-    serverTime: new Date().toISOString()
+    backend: {
+      version: fileVersion,
+      buildDate: new Date().toISOString(),
+      serverTime: new Date().toISOString(),
+      uptime: process.uptime(),
+      nodeVersion: process.version,
+      environment: process.env.NODE_ENV || 'development'
+    },
+    frontend: {
+      version: fileVersion, // Same as backend, but client can compare
+      supportedFeatures: [
+        'pwa',
+        'push-notifications', 
+        'offline-support',
+        'backend-status-check'
+      ]
+    },
+    api: {
+      version: 'v1',
+      endpoints: [
+        '/api/status',
+        '/api/health', 
+        '/api/version',
+        '/api/users',
+        '/api/pushups',
+        '/api/squats',
+        '/api/situps'
+      ]
+    }
   });
 });
 

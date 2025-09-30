@@ -14,9 +14,42 @@ package-lock.json
 *.db
 *.sqlite
 
+# Database dumps and backups
+*.sql
+*_dump*.sql
+*_backup*.sql
+
 # Logs
 *.log
 npm-debug.log*
+
+# Docker images and containers
+*.tar
+docker-compose-truenas.yml
+docker-compose-prod.yml
+
+# TrueNAS deployment files (contain secrets)
+truenas-*.yml
+truenas.md
+deploy-*.sh
+quick-update.sh
+start-local.sh
+update-truenas.sh
+
+# SSH keys and certificates
+*.key
+*.pem
+*.crt
+id_rsa*
+truenas_key*
+
+# Local development and deployment
+backend/deploy-*.sh
+backend/quick-update.sh
+
+# Temporary files
+temp/
+tmp/
 
 # Runtime data
 pids

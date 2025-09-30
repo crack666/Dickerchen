@@ -1,6 +1,6 @@
 // Version configuration for cache busting
-window.APP_VERSION = '1.2.5';
-window.BUILD_DATE = '2025-09-30T16:02:23+02:00';
+window.APP_VERSION = '1.2.6';
+window.BUILD_DATE = '2025-09-30T16:39:59+02:00';
 
 // Cache busting utility
 window.versionedUrl = function(path) {

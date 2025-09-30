@@ -1220,3 +1220,81 @@ button:active {
   transform: none;
   box-shadow: none;
 }
+
+/* Debug Panel Styles */
+.debug-panel {
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 8px;
+  padding: 15px;
+  margin: 10px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.debug-section {
+  margin-bottom: 15px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  border-left: 3px solid #007cba;
+}
+
+.debug-section h4 {
+  margin: 0 0 10px 0;
+  color: #4dd0e1;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.debug-item {
+  margin: 5px 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.debug-item strong {
+  min-width: 120px;
+  color: #81c784;
+  font-weight: bold;
+}
+
+.debug-item span {
+  color: #fff;
+  margin-left: 10px;
+}
+
+/* Version-specific debug styles */
+#debug-version-status span {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Version indicator in header */
+.version-info {
+  font-size: 0.5em;
+  opacity: 0.7;
+  font-weight: normal;
+  margin-left: 3px;
+  transition: color 0.3s ease;
+}
+
+.version-info.update-available {
+  color: #ffa500 !important;
+  opacity: 1;
+  animation: versionPulse 2s infinite;
+}
+
+@keyframes versionPulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
